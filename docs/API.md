@@ -60,6 +60,8 @@ the code, not in this page.
 | [`src/installer-write.ts`](#srcinstaller-writets) | Writing a mod into the game folder and taking it out again (src/installer.ts is the door): a |
 | [`src/installer.ts`](#srcinstallerts) | The installer: everything that writes a mod into the game folder or takes it out again. The |
 | [`src/ipc.ts`](#srcipcts) | Every IPC module, registered in one place over the context src/main.ts builds. A new |
+| [`src/item-arcana-assets.ts`](#srcitem-arcana-assetsts) | Resolve a hero's stock model from the installed game, not a version-dependent path list. |
+| [`src/item-arcana.ts`](#srcitem-arcanats) | Default-style Arcana support for the personal fork (2026-10-11). |
 | [`src/item-builder-effects.ts`](#srcitem-builder-effectsts) | The particle effects the item builder can put on top of an item: the effect's id, its name in |
 | [`src/item-builder-slots.ts`](#srcitem-builder-slotsts) | The item builder's offer: for each hero, the slots it can dress, the paid wearables that fit |
 | [`src/item-builder.ts`](#srcitem-builderts) | The item builder: a hero's stock item built from one of its wearables, with an effect on top. |
@@ -2521,6 +2523,81 @@ export function registerIpc(ctx: AppContext): void
 
 Register every channel the window can call.
 
+## src/item-arcana-assets.ts
+
+Resolve a hero's stock model from the installed game, not a version-dependent path list.
+
+### `heroModelPath`
+
+```ts
+export function heroModelPath(read: (name: string) => Buffer | null, hero: string): string
+```
+
+_No description in the source._
+
+## src/item-arcana.ts
+
+Default-style Arcana support for the personal fork (2026-10-11).
+Item-builder copyright (C) 2026 h6rd and TheFleece; GPL-3.0-or-later, see NOTICE.
+IDs are deliberately explicit: a newly added persona or Arcana is not silently opted in.
+
+### `ARCANA_ITEMS`
+
+```ts
+export const ARCANA_ITEMS: Record<string, { hero: string; target: string }> =
+```
+
+_No description in the source._
+
+### `supportedArcana`
+
+```ts
+export function supportedArcana(item: Partial<SchemaItem> | null): boolean
+```
+
+_No description in the source._
+
+### `arcanaModifiers`
+
+```ts
+export function arcanaModifiers(visuals: string): Modifier[]
+```
+
+_No description in the source._
+
+### `defaultArcanaVisuals`
+
+```ts
+export function defaultArcanaVisuals(visuals: string, priority = new Set<string>()): string
+```
+
+Removing "styles" alone leaves every red/blue effect enabled at once. Keep only style 0;
+progression-specific Rubick overrides stay out, rather than recolouring other heroes' spells.
+
+### `ArcanaContext`
+
+```ts
+export type ArcanaContext = Map<string, { id: string; refits: Map<string, string>; priority: Set<string> }>
+```
+
+_No description in the source._
+
+### `createArcanaContext`
+
+```ts
+export function createArcanaContext(text: string, activeIds: string[]): ArcanaContext
+```
+
+Read once per rebuild; refits apply only to a hero with its Arcana actually enabled.
+
+### `arcanaBodyCopies`
+
+```ts
+export function arcanaBodyCopies(itemId: string, visuals: string): AssetCopy[]
+```
+
+Whole-body models must be replaced too; do not redirect shared summons globally.
+
 ## src/item-builder-effects.ts
 
 The particle effects the item builder can put on top of an item: the effect's id, its name in
@@ -2592,7 +2669,7 @@ A set, as the builder puts it on; see itemSets.
 ### `AssetCopy`
 
 ```ts
-export type AssetCopy = { from: string; to: string }
+export type AssetCopy = { from: string; to: string; entityModel?: boolean }
 ```
 
 A file in the game's archive staged under another path in the built VPK.
@@ -2619,7 +2696,7 @@ A slot name with its aliases folded together (offhand_weapon is offhand, shoulde
 export function isArcanaPersonaItem(item: Partial<SchemaItem> | null): boolean
 ```
 
-An arcana, a persona or a hero's base model, by its name or its slot: the builder leaves these alone.
+Personas and unreviewed Arcana remain excluded; the personal fork opts in known item IDs.
 
 ### `itemSlots`
 
@@ -2719,7 +2796,7 @@ The stock default_item that matches a wearable by slot and by the hero(es) that 
 ### `itemEffectPatch`
 
 ```ts
-export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined): { id: string; block: string; assetCopies: AssetCopy[] }
+export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined, arcanas?: ArcanaContext): { id: string; block: string; assetCopies: AssetCopy[] }
 ```
 
 Turn one paid wearable into the hero's stock item for that slot.
@@ -2733,7 +2810,7 @@ built VPK should carry.
 ### `gameAssetEntries`
 
 ```ts
-export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined): VpkEntry[]
+export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined, index?: ReturnType<typeof openVpkIndex>): VpkEntry[]
 ```
 
 Read compiled asset bytes out of pak01 and stage them under the renamed path in our VPK.

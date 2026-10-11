@@ -11,6 +11,8 @@ import path from 'node:path';
 import * as patcher from './patcher.ts';
 import * as schema from './schema.ts';
 import * as itemBuilder from './item-builder.ts';
+import { createArcanaContext } from './item-arcana.ts';
+import { openVpkIndex } from './vpk.ts';
 import { createHarvest, type SchemaInstaller } from './schema-harvest.ts';
 import { createCosmetics } from './schema-cosmetics.ts';
 import type { Settings } from './settings.ts';
@@ -63,19 +65,28 @@ export function createSchemaService({ settings, library, installer, userDataDir,
   // so toggling, deleting and sharing it in a preset all go through the normal machinery.
   function patches(vanillaText: string, game: string): schema.SchemaPatch[] {
     const out: schema.SchemaPatch[] = [];
+    const arcanas = createArcanaContext(vanillaText, library.list()
+      .filter((r) => r.enabled !== false && r.categoryId === 'cosmetic').map((r) => String(r.itemId)));
+    let assetIndex: ReturnType<typeof openVpkIndex> | undefined;
     for (const rec of library.list()) {
       if (rec.enabled === false) continue;
       if (rec.categoryId === 'cosmetic') {
         try {
           if (rec.slot === 'items' || String(rec.slot || '').startsWith('item:')) {
-            const built = itemBuilder.itemEffectPatch(vanillaText, String(rec.itemId), rec.effectId);
-            out.push({ id: built.id, block: built.block, assets: itemBuilder.gameAssetEntries(game, built.assetCopies), source: rec.name });
+            const built = itemBuilder.itemEffectPatch(vanillaText, String(rec.itemId), rec.effectId, arcanas);
+            // Hundreds of slots share this archive. Re-reading its index for each part made a
+            // single change to the all-hero loadout stall the window for minutes.
+            assetIndex ||= openVpkIndex(path.join(game, 'dota', 'pak01_dir.vpk'));
+            out.push({ id: built.id, block: built.block, assets: itemBuilder.gameAssetEntries(game, built.assetCopies, assetIndex), source: rec.name });
             continue;
           }
           const target = schema.baseItemFor(vanillaText, rec.slot);
           if (!target) continue;
           out.push({ id: target.id, block: schema.baseItemPatch(vanillaText, target.id, String(rec.itemId)), source: rec.name });
         } catch (err) {
+          // An incomplete Arcana can leave a hero with the wrong skeleton. Keep the previous
+          // deployed pack if any required resource has gone missing after a game update.
+          if (arcanas.size) throw err;
           // A donor Valve removed drops out of the build, and so does a pick the builder refuses.
           // Said in the log, because the window cannot tell: it showed "installed" either way.
           log(`schema: ${rec.name} left out of the build: ${(err as Error)?.message || err}`);

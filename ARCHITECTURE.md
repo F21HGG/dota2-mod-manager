@@ -477,6 +477,7 @@ that location is not writable.
 | `src/schema-service.ts`, `src/schema-cosmetics.ts`, `src/schema-harvest.ts` | The item table as the app keeps it: the build and the repair, the free cosmetics, and a mod's own blocks |
 | `src/cosmetic-names.ts` | Official Chinese item names from the installed game's localization tokens; read-only and cached per game build |
 | `src/item-builder.ts`, `src/item-builder-slots.ts`, `src/item-builder-effects.ts` | The item builder: what it offers each hero and slot, the effects, and what a pick writes |
+| `src/item-arcana.ts`, `src/item-arcana-assets.ts` | Personal fork: explicit default-style Arcana, enabled-hero refits, effect precedence and game-derived body model paths |
 | `src/notice-text.ts`, `src/notice-texts.ts` | The game's anti-cheat notice in words that say what to do, in every language Dota ships |
 | `src/terrain-age.ts` | Terrains that replace the whole map, and whether the game's map has moved on since |
 | `src/mod-id.ts`, `src/fingerprints.ts`, `src/hero-names.ts` | What a mod replaces, asked of the game; recognising a file somebody else installed; which hero a name means |

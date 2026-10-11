@@ -13,6 +13,7 @@
 import { heroDisplayName } from './vpk.ts';
 import { t } from './i18n.ts';
 import { listItems, toUtf8, eachChild, blockBounds, itemSearchText, inferredItemSlot, type SchemaItem } from './schema.ts';
+import { supportedArcana } from './item-arcana.ts';
 
 /** A slot of a hero the builder can dress, and the paid items that fit it. */
 export interface ItemSlot {
@@ -29,7 +30,7 @@ type SetPiece =
 export interface ItemSet { id: string; name: string; heroIds: string[]; fit: number; heroLabel: string; pieces: SetPiece[] }
 
 /** A file in the game's archive staged under another path in the built VPK. */
-export type AssetCopy = { from: string; to: string };
+export type AssetCopy = { from: string; to: string; entityModel?: boolean };
 
 const ITEM_HIDDEN_HEROES = new Set(['wisp', 'io']);
 
@@ -95,8 +96,9 @@ function itemSlotLabel(heroIds: string[], slot: string): string {
   return `${heroes} · ${slotDisplayLabel(slot)}`;
 }
 
-/** An arcana, a persona or a hero's base model, by its name or its slot: the builder leaves these alone. */
+/** Personas and unreviewed Arcana remain excluded; the personal fork opts in known item IDs. */
 export function isArcanaPersonaItem(item: Partial<SchemaItem> | null): boolean {
+  if (supportedArcana(item)) return false;
   const text = itemSearchText(item);
   const slot = canonicalItemSlot(inferredItemSlot(item));
   return text.includes('arcana')
@@ -134,7 +136,7 @@ export function itemSlots(text: string): ItemSlot[] {
     const equipSlot = canonicalItemSlot(inferredItemSlot(item));
     if (item.prefab !== 'default_item' || !equipSlot || isArcanaPersonaItem(item)) continue;
     const heroes = heroesOf(item);
-    if (!heroes.length || hiddenItemHeroes(heroes)) continue;
+    if (!heroes.length || (hiddenItemHeroes(heroes) && !supportedArcana(item))) continue;
     const heroIds = heroes.map(canonicalHeroId);
     const slotId = itemSlotId(heroIds, equipSlot);
     slots.set(slotId, {
@@ -159,7 +161,7 @@ export function itemSlots(text: string): ItemSlot[] {
     const equipSlot = canonicalItemSlot(inferredItemSlot(item));
     if (item.prefab !== 'wearable' || !equipSlot || !item.name || isArcanaPersonaItem(item)) continue;
     const heroes = heroesOf(item);
-    if (!heroes.length || hiddenItemHeroes(heroes)) continue;
+    if (!heroes.length || (hiddenItemHeroes(heroes) && !supportedArcana(item))) continue;
     const heroIds = heroes.map(canonicalHeroId);
     const slotId = itemSlotId(heroIds, equipSlot);
     let target: ItemSlot | null | undefined = slots.get(slotId);

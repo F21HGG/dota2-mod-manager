@@ -1,3 +1,11 @@
+# Dota 饰品搭配助手（个人维护分支）
+
+Modified by F21HGG, 2026-10-11. This fork adds Simplified Chinese, official-item browsing and
+default-style Arcana compatibility. It is not an upstream release. See [maintenance and validation](FORK-MAINTENANCE.md).
+Based on Dota 2 Mod Manager, Copyright (C) 2026 TheFleece; item builder Copyright (C) 2026
+h6rd and TheFleece. GPL-3.0-or-later; [LICENSE](LICENSE) and [NOTICE](NOTICE) apply.
+The original project's documentation and download links follow; those downloads do not include this fork's changes.
+
 <div align="center">
 
 <img src=".github/banner.svg" alt="Dota 2 Mod Manager" width="900">

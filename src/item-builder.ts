@@ -30,6 +30,8 @@ import {
   canonicalItemSlot, isArcanaPersonaItem, itemHeroes, matchItemSlot, type AssetCopy,
 } from './item-builder-slots.ts';
 import { ITEM_EFFECTS, type ItemEffect } from './item-builder-effects.ts';
+import { ARCANA_ITEMS, arcanaBodyCopies, defaultArcanaVisuals, type ArcanaContext } from './item-arcana.ts';
+import { heroModelPath } from './item-arcana-assets.ts';
 
 export { itemSlots, itemSets, itemOptions } from './item-builder-slots.ts';
 export { itemEffects } from './item-builder-effects.ts';
@@ -138,16 +140,19 @@ export function defaultItemForWearable(text: string, sourceId: string | number):
     .sort((a, b) => Number(a.id) - Number(b.id))[0] || null;
 }
 
-function particleVisualCopies(visuals: string): AssetCopy[] {
+function particleVisualCopies(visuals: string, arcana = false): AssetCopy[] {
   const copies: AssetCopy[] = [];
   eachChild(visuals, blockBounds(visuals, 0), (c) => {
-    if (!c.isBlock || c.key.toLowerCase() !== 'asset_modifier') return;
+    if (!c.isBlock || !(arcana ? /^asset_modifier\d*$/i.test(c.key) : c.key.toLowerCase() === 'asset_modifier')) return;
     const fields = new Map<string, string>();
     eachChild(visuals, c.body, (f) => { if (!f.isBlock) fields.set(f.key.toLowerCase(), f.value); });
     if ((fields.get('type') || '').toLowerCase() !== 'particle') return;
     const asset = fields.get('asset');
     const modifier = fields.get('modifier');
     if (!asset || !modifier) return;
+    // A schema modifier is scoped to its wearer; a file override is global. Arcana blink,
+    // deny and item effects must not recolour every other hero in an all-hero loadout.
+    if (arcana && !asset.startsWith('particles/units/heroes/')) return;
     copies.push({ from: modifier, to: asset });
   });
   return copies;
@@ -184,7 +189,7 @@ function appendItemEffect(visuals: string, effect: ItemEffect): string {
  * as the paid item in items_game, while assetCopies still describe the stock-path overrides the
  * built VPK should carry.
  */
-export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined): { id: string; block: string; assetCopies: AssetCopy[] } {
+export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined, arcanas?: ArcanaContext): { id: string; block: string; assetCopies: AssetCopy[] } {
   const source = findItem(baseText, itemId);
   if (!source) throw new Error(t('items_game: предмет {0} не найден', itemId));
   const target = defaultItemForWearable(baseText, itemId);
@@ -199,14 +204,24 @@ export function itemEffectPatch(baseText: string, itemId: string | number, effec
   const sourceFields = itemFields(baseText, source);
   const targetFields = itemFields(baseText, target);
   let visuals = itemVisuals(baseText, source) || '"visuals"\r\n{\r\n}';
+  const arcana = ARCANA_ITEMS[String(itemId)];
+  const hero = itemHeroes(baseText, source)[0];
+  if (arcana && (target.id !== arcana.target || hero !== 'npc_dota_hero_' + arcana.hero)) {
+    throw new Error(t('items_game: default_item для предмета {0} не найден', itemId));
+  }
+  const activeArcana = arcanas?.get(hero);
+  const refits = activeArcana?.refits;
+  if (arcana || refits) visuals = defaultArcanaVisuals(visuals, arcana ? undefined : activeArcana?.priority);
 
   const assetCopies: AssetCopy[] = [];
-  const sourceModel = sourceFields.get('model_player') || '';
+  const originalModel = sourceFields.get('model_player') || '';
+  const sourceModel = refits?.get(originalModel.toLowerCase()) || originalModel;
   const targetModel = targetFields.get('model_player') || '';
   if (sourceModel && targetModel && normalizeAssetPath(sourceModel) !== normalizeAssetPath(targetModel)) {
     assetCopies.push({ from: sourceModel, to: targetModel });
   }
-  assetCopies.push(...particleVisualCopies(visuals));
+  assetCopies.push(...particleVisualCopies(visuals, !!arcana));
+  assetCopies.push(...arcanaBodyCopies(String(itemId), visuals));
 
   visuals = stripKeyBlocks(visuals, 'unlock');
   visuals = stripKeyBlocks(visuals, 'styles');
@@ -215,20 +230,21 @@ export function itemEffectPatch(baseText: string, itemId: string | number, effec
   let patched = setBlockId(itemBlock(baseText, source), target.id);
   patched = setScalarField(patched, 'name', targetFields.get('name') || target.name || target.id);
   patched = setScalarField(patched, 'prefab', 'default_item');
+  if (sourceModel !== originalModel) patched = setScalarField(patched, 'model_player', sourceModel);
   patched = setVisualsBlock(patched, visuals);
   return { id: target.id, block: patched, assetCopies };
 }
 
 /** Read compiled asset bytes out of pak01 and stage them under the renamed path in our VPK. */
-export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined): VpkEntry[] {
+export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined, index?: ReturnType<typeof openVpkIndex>): VpkEntry[] {
   const pak = path.join(gamePath, 'dota', 'pak01_dir.vpk');
   if (!fs.existsSync(pak)) throw new Error(t('Не найден {0}', pak));
-  const ix = openVpkIndex(pak);
+  const ix = index || openVpkIndex(pak);
   const out: VpkEntry[] = [];
   const seen = new Set<string>();
   for (const copy of assetCopies || []) {
     const from = compiledAssetPath(copy.from);
-    const to = compiledAssetPath(copy.to);
+    const to = compiledAssetPath(copy.entityModel ? heroModelPath((name) => ix.read(name), copy.to) : copy.to);
     if (!from || !to || seen.has(to)) continue;
     const data = ix.read(from);
     if (!data) throw new Error(t('Не найден {0}', from));
