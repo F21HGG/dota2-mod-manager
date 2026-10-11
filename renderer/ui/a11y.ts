@@ -19,6 +19,9 @@
  *
  * The windows are found by what they are rather than registered one by one: a .confirm-overlay or
  * a .player-overlay put on the page, and #modalOverlay or #queueOverlay shown and hidden.
+ *
+ * What happens without the focus moving is said out loud: "IO Purple installed", an error. A toast
+ * on screen says nothing to a screen reader, so every toast is also announced (announce below).
  */
 
 import { wrapTarget } from './focus-wrap.ts';
@@ -36,6 +39,43 @@ const BOX = '.confirm-box, .modal-content, .queue-panel, .player-box';
 
 type Held = { overlay: HTMLElement; box: HTMLElement; opener: HTMLElement | null };
 const held: Held[] = [];
+
+/* Where an announcement goes. A live region outside an open window is silent: aria-modal hides
+   everything outside the window from the reader, and "installed" arrives while a mod's window is
+   open. So each window gets its own region as it opens, the page has one (#announcer in
+   index.html), and a message goes to the topmost. A region has to be on the page before its text
+   changes for the change to be read, which is why they are made ahead of anything to say. */
+const REGION = 'sr-announce';
+
+function regionIn(host: HTMLElement): HTMLElement {
+  const had = [...host.children].find((c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains(REGION));
+  if (had) return had;
+  const region = document.createElement('div');
+  region.className = REGION;
+  region.setAttribute('role', 'status');
+  host.append(region);
+  return region;
+}
+
+/* How long the words stay after they are said. Long enough to be read; gone after, because a
+   region that kept them was still saying "installed" the next time the window opened, in the
+   language the app was in back then (the settings scenario found Russian in the English window). */
+const SAID_MS = 7000;
+const clearing = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
+/** Say `msg` to a screen reader without moving the focus, in the window that is open if one is. */
+export function announce(msg: string): void {
+  const top = held[held.length - 1];
+  const region = top?.box.isConnected ? regionIn(top.box) : document.getElementById('announcer');
+  if (!region) return;
+  // emptied first, so the same words twice in a row are read twice
+  region.textContent = '';
+  clearTimeout(clearing.get(region));
+  setTimeout(() => {
+    region.textContent = msg;
+    clearing.set(region, setTimeout(() => { region.textContent = ''; }, SAID_MS));
+  }, 50);
+}
 let uid = 0;
 /* The last few things that had the focus, newest last. A dialog may focus its own button before
    this module hears it opened (confirmDialog does, synchronously), so what opened it is the newest
@@ -63,6 +103,7 @@ function hold(overlay: HTMLElement): void {
   const box = overlay.querySelector<HTMLElement>(BOX) || overlay;
   const opener = [...recent].reverse().find((el) => el.isConnected && !overlay.contains(el)) || null;
   held.push({ overlay, box, opener });
+  regionIn(box);
   /* The window draws its content just after it opens (React commits on a later task, an
      innerHTML right away), so look a few times until something focusable is there. Timers, not
      animation frames: a window that is not on screen draws no frames, and an automated run keeps
