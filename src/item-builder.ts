@@ -30,7 +30,7 @@ import {
   canonicalItemSlot, isArcanaPersonaItem, itemHeroes, matchItemSlot, type AssetCopy,
 } from './item-builder-slots.ts';
 import { ITEM_EFFECTS, type ItemEffect } from './item-builder-effects.ts';
-import { ARCANA_ITEMS, arcanaBodyCopies, defaultArcanaVisuals, type ArcanaContext } from './item-arcana.ts';
+import { ARCANA_ITEMS, ARCANA_COMPANIONS, arcanaBodyCopies, defaultArcanaVisuals, type ArcanaContext } from './item-arcana.ts';
 import { heroModelPath } from './item-arcana-assets.ts';
 
 export { itemSlots, itemSets, itemOptions } from './item-builder-slots.ts';
@@ -211,7 +211,7 @@ export function itemEffectPatch(baseText: string, itemId: string | number, effec
   }
   const activeArcana = arcanas?.get(hero);
   const refits = activeArcana?.refits;
-  if (arcana || refits) visuals = defaultArcanaVisuals(visuals, arcana ? undefined : activeArcana?.priority);
+  if (arcana || ARCANA_COMPANIONS[String(itemId)] || refits) visuals = defaultArcanaVisuals(visuals, arcana ? undefined : activeArcana?.priority);
 
   const assetCopies: AssetCopy[] = [];
   const originalModel = sourceFields.get('model_player') || '';

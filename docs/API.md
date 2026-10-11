@@ -2764,6 +2764,14 @@ export const ARCANA_ITEMS: Record<string, { hero: string; target: string }> =
 
 _No description in the source._
 
+### `ARCANA_COMPANIONS`
+
+```ts
+export const ARCANA_COMPANIONS: Record<string, { hero: string; slot: string }> =
+```
+
+Reviewed wearable parts of Valve's original Arcana bundles, excluding voice/personas.
+
 ### `supportedArcana`
 
 ```ts

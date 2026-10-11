@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ARCANA_ITEMS, createArcanaContext, defaultArcanaVisuals, arcanaBodyCopies } from '../src/item-arcana.ts';
+import { ARCANA_ITEMS, ARCANA_COMPANIONS, createArcanaContext, defaultArcanaVisuals, arcanaBodyCopies } from '../src/item-arcana.ts';
 import { itemSlots, itemEffectPatch, defaultItemForWearable, gameAssetEntries } from '../src/item-builder.ts';
 import { heroModelPath } from '../src/item-arcana-assets.ts';
 import { buildVpk, entryAt, entryPath } from '../src/vpk.ts';
@@ -16,6 +16,27 @@ function wearable(id: string, hero: string, slot: string, visuals = '', model = 
 const table = (...items: string[]) => `"items_game" { "items" { ${items.join('\n')} } }`;
 const modifier = (type: string, asset: string, value: string, extra = '', key = 'asset_modifier') =>
   `"${key}" { "type" "${type}" "asset" "${asset}" "modifier" "${value}" ${extra} }`;
+
+test('original Arcana outfit parts share the ordinary slot and keep only their default style', () => {
+  for (const [id, part] of Object.entries(ARCANA_COMPANIONS)) {
+    const text = table(
+      wearable('1', part.hero, part.slot, '', '', 'default_item').replace('1 Arcana', 'Stock item'),
+      wearable(id, part.hero, part.slot, modifier('particle', 'skill', 'first', '"style" "0"')
+        + modifier('particle', 'skill', 'second', '"style" "1"')),
+      wearable('99990', part.hero, part.slot).replace('99990 Arcana', 'Ordinary Immortal'),
+    );
+    const slots = itemSlots(text);
+    assert.equal(slots.length, 1, 'an outfit part must not create a second equipment slot');
+    assert.deepEqual(new Set(slots[0].options.map(o => o.id)), new Set([id, '99990']));
+    const built = itemEffectPatch(text, id, '');
+    assert.equal(built.id, '1');
+    assert.match(built.block, /first/);
+    assert.doesNotMatch(built.block, /second|"style"/);
+  }
+  const unknown = table(wearable('1', 'juggernaut', 'head', '', '', 'default_item').replace('1 Arcana', 'Stock'),
+    wearable('99991', 'juggernaut', 'head'));
+  assert.deepEqual(itemSlots(unknown), [], 'unreviewed Arcana parts remain excluded');
+});
 
 test('only reviewed Arcana and their real stock slots are enabled, including Io', () => {
   for (const [id, a] of Object.entries(ARCANA_ITEMS)) {
