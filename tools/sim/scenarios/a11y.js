@@ -3,9 +3,9 @@
  *
  * Three kinds of check, each on every section and on the windows that open over them:
  *
- * - axe-core (WCAG 2.0, 2.1 and 2.2, A and AA). What it cannot decide by itself, mostly contrast
- *   over the translucent panels, is written to axe-<where>.json as "incomplete" for a person to
- *   look at, and is not a failure here.
+ * - axe-core (WCAG 2.0, 2.1 and 2.2, A and AA). The contrast it cannot decide by itself, over
+ *   the translucent panels, is measured on the pixels instead (tools/sim/contrast.js) and written
+ *   to contrast-<where>.json, every node with its ratio.
  * - The accessibility tree Chromium hands a screen reader, read over the DevTools protocol: every
  *   control in it has a role and a name, and no name is an icon's ligature ("check_circle").
  * - The keyboard, pressed the way a hand presses it (sendInputEvent): Tab goes everywhere with a
@@ -21,6 +21,9 @@
 const fs = require('fs');
 const path = require('path');
 const steps = require('../steps');
+// every value put into page code goes through lit, which escapes what JSON.stringify leaves alone
+const { lit } = require('../driver');
+const { measure, isLarge, NODES, HIDE_TEXT } = require('../contrast');
 
 const SECTIONS = ['catalog', 'library', 'presets', 'settings'];
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -31,7 +34,6 @@ const CONTROLS = new Set(['button', 'link', 'checkbox', 'switch', 'textbox', 'se
 const LIGATURE = /\b[a-z]+(?:_[a-z]+)+\b/;
 // one mod, small, whose archive the sandbox carries (tools/sandbox-mods.json)
 const MOD = 'IO Purple';
-
 /** What has the focus, where it is, and whether it shows. */
 const FOCUSED = `(() => {
   const el = document.activeElement;
@@ -53,17 +55,48 @@ module.exports = async function a11y(sim) {
   wc.debugger.attach('1.3');
   await wc.debugger.sendCommand('Accessibility.enable');
 
+  /** The text axe could not judge, against the pixels behind it: one capture with the glyphs
+   * hidden, then every node's colour laid over every pixel under its text. */
+  const contrast = async (where, targets) => {
+    const nodes = await sim.js(`${NODES}(${lit(targets)})`);
+    const key = await wc.insertCSS(HIDE_TEXT, { cssOrigin: 'user' });
+    // a forced repaint and time for it, or the capture can be the frame from before the style
+    // (it was, on the first section: every glyph still there, and 1:1 against itself)
+    wc.invalidate();
+    await sim.js('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 350))))');
+    const image = await wc.capturePage();
+    await wc.removeInsertedCSS(key);
+    fs.writeFileSync(path.join(sim.out, `contrast-${where}.png`), image.toPNG());
+    const { width, height } = image.getSize();
+    const frame = { bitmap: image.toBitmap(), width, height, scale: width / await sim.js('innerWidth') };
+    const measured = nodes.map((n) => {
+      if (n.skip) return n;
+      const m = measure(frame, { rects: n.rects, color: n.color, alpha: n.alpha, large: isLarge(n.px, n.weight) });
+      const at = n.rects[0] && Object.fromEntries(Object.entries(n.rects[0]).map(([k, v]) => [k, Math.round(v)]));
+      return m ? { sel: n.sel, text: n.text, px: n.px, at, ...m } : { sel: n.sel, text: n.text, skip: 'not on the capture' };
+    });
+    const low = measured.filter((m) => m.ok === false);
+    fs.writeFileSync(path.join(sim.out, `contrast-${where}.json`), JSON.stringify({
+      measured: measured.filter((m) => !m.skip).length, failing: low.length, nodes: measured,
+    }, null, 1));
+    sim.check(`${where}: the text axe could not judge has the contrast WCAG asks for, measured on the pixels`, !low.length,
+      low.slice(0, 6).map((m) => `${m.sel} "${m.text}" ${m.low}:1, needs ${m.need}:1`).join(' | '));
+  };
+
   /** axe and the accessibility tree over what is on screen now. */
   const audit = async (where) => {
     if (!await sim.js('typeof window.axe === "object"')) await sim.js(`${axe};true`);
-    const found = await sim.js(`axe.run(document, { runOnly: { type: 'tag', values: ${JSON.stringify(TAGS)} }, resultTypes: ['violations', 'incomplete'] })
+    const found = await sim.js(`axe.run(document, { runOnly: { type: 'tag', values: ${lit(TAGS)} }, resultTypes: ['violations', 'incomplete'] })
       .then((r) => ({
         violations: r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.slice(0, 5).map((n) => n.target.join(' ')) })),
         incomplete: r.incomplete.map((v) => ({ id: v.id, nodes: v.nodes.length })),
+        contrast: (r.incomplete.find((v) => v.id === 'color-contrast')?.nodes || [])
+          .map((n) => n.target[n.target.length - 1]).filter((t) => typeof t === 'string'),
       }))`);
     fs.writeFileSync(path.join(sim.out, `axe-${where}.json`), JSON.stringify(found, null, 1));
     sim.check(`${where}: axe finds nothing against WCAG 2.2 AA`, !found.violations.length,
       found.violations.map((v) => `${v.id}: ${v.nodes.join(', ')}`).join(' | '), found);
+    await contrast(where, found.contrast);
 
     const { nodes } = await wc.debugger.sendCommand('Accessibility.getFullAXTree');
     const controls = nodes.filter((n) => !n.ignored && CONTROLS.has(n.role?.value));
@@ -78,6 +111,8 @@ module.exports = async function a11y(sim) {
   for (const view of SECTIONS) {
     await steps.openSection(sim, view);
     await sim.settle(600);
+    sim.check(`${view}: a screen reader is told it is the open section`,
+      await sim.js(`[...document.querySelectorAll('.tb-tab[aria-current]')].map((b) => b.dataset.view).join() === ${lit(view)}`));
     await audit(view);
   }
 
@@ -107,9 +142,11 @@ module.exports = async function a11y(sim) {
   const m = picked[0];
   await steps.openSection(sim, 'catalog');
   await sim.click(`.rail-item[data-cat="${m.categoryId}"]`);
+  sim.check('a screen reader is told which category is picked',
+    await sim.until(`[...document.querySelectorAll('.rail-item[aria-current="true"]')].map((b) => b.dataset.cat).join() === ${lit(m.categoryId)}`, 3000));
   const at = await sim.until(`(() => {
     const names = [...document.querySelectorAll('.view-pane[data-pane="catalog"] .grid .card .card-open')];
-    const i = names.findIndex((n) => n.textContent.trim() === ${JSON.stringify(m.name)});
+    const i = names.findIndex((n) => n.textContent.trim() === ${lit(m.name)});
     if (i < 0) return 0;
     names[i].focus(); // the walk above showed Tab gets to cards; this one is a long way down the grid
     return i + 1;
@@ -145,6 +182,16 @@ module.exports = async function a11y(sim) {
       await sim.until(`document.getElementById('uninstallBtn')`, 60000);
     }
     sim.check(`${m.name}: installed with the keyboard alone`, await sim.js(`!!document.getElementById('uninstallBtn')`));
+    /* Said out loud where the reader is listening: inside the window. A region outside it is
+       hidden by aria-modal, so a toast alone told a screen reader nothing. */
+    const said = await sim.until(`(() => {
+      const r = document.querySelector('[aria-modal="true"] .sr-announce');
+      return r && r.textContent.includes(${lit(m.name)}) ? r.textContent : null;
+    })()`, 3000);
+    sim.check('the install is announced inside the window', !!said, String(said));
+    const { nodes } = await wc.debugger.sendCommand('Accessibility.getFullAXTree');
+    sim.check('and the reader can reach that announcement', nodes.some((n) => !n.ignored && n.role?.value === 'status'),
+      'no status region in the accessibility tree while the window is open');
   }
   await sim.key('Escape');
   await sim.until(`document.getElementById('modalOverlay').classList.contains('hidden')`, 3000);
@@ -162,7 +209,7 @@ module.exports = async function a11y(sim) {
     let onDel = false;
     for (let i = 0; i < 80 && !onDel; i++) {
       await sim.key('Tab');
-      onDel = await sim.js(`document.activeElement === document.querySelector(${JSON.stringify(del)})`);
+      onDel = await sim.js(`document.activeElement === document.querySelector(${lit(del)})`);
     }
     if (sim.check('Tab reaches the row\'s Remove', onDel)) {
       await sim.key('Enter');
@@ -179,7 +226,7 @@ module.exports = async function a11y(sim) {
       await sim.until(`!document.querySelector('.confirm-overlay')`, 3000);
       await sim.settle(200);
       sim.check('Escape answers no: the mod stays', !!steps.rowOf(await steps.libraryRows(sim), m.name));
-      sim.check('and the focus goes back to Remove', await sim.js(`document.activeElement === document.querySelector(${JSON.stringify(del)})`),
+      sim.check('and the focus goes back to Remove', await sim.js(`document.activeElement === document.querySelector(${lit(del)})`),
         JSON.stringify(await sim.js(FOCUSED)));
       await sim.key('Enter');
       await sim.until(`document.querySelector('.confirm-overlay [data-c="yes"]')`, 5000);
@@ -188,7 +235,7 @@ module.exports = async function a11y(sim) {
       const onYes = () => sim.js(`document.activeElement === document.querySelector('.confirm-overlay [data-c="yes"]')`);
       for (let i = 0; i < 4 && !await onYes(); i++) await sim.key('Tab');
       await sim.key('Enter');
-      const gone = await sim.until(`!document.querySelector(${JSON.stringify(`.lib-row[data-row="${row.id}"]`)})`, 10000);
+      const gone = await sim.until(`!document.querySelector(${lit(`.lib-row[data-row="${row.id}"]`)})`, 10000);
       sim.check(`${m.name}: removed with the keyboard alone`, !!gone);
     }
   }

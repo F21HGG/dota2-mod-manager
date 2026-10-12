@@ -28,6 +28,7 @@
   <img src="https://img.shields.io/github/last-commit/dota2modmanager/dota2-mod-manager?style=flat-square&label=last%20commit&labelColor=211f26&color=8b6ff0" alt="Last commit">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-c4b5fd?style=flat-square&labelColor=211f26" alt="License"></a>
   <a href="https://dota2modmanager.com"><img src="https://img.shields.io/badge/site-dota2modmanager.com-c4b5fd?style=flat-square&labelColor=211f26" alt="Website"></a>
+  <a href="https://deepwiki.com/dota2modmanager/dota2-mod-manager"><img src="https://img.shields.io/badge/ask-DeepWiki-c4b5fd?style=flat-square&labelColor=211f26" alt="Ask DeepWiki about this repository"></a>
   <a href="mailto:hello@dota2modmanager.com"><img src="https://img.shields.io/badge/email-hello%40dota2modmanager.com-c4b5fd?style=flat-square&labelColor=211f26" alt="Email: hello@dota2modmanager.com"></a>
   <a href="https://discord.gg/PBvG8D9MxT"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FPBvG8D9MxT%3Fwith_counts%3Dtrue&query=%24.approximate_presence_count&label=discord&suffix=%20online&style=flat-square&labelColor=211f26&color=5865f2&logo=discord&logoColor=white" alt="Discord: people online on the D2PFX catalog's server, where the app has its own channel"></a>
   <a href="https://discord.gg/PBvG8D9MxT"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FPBvG8D9MxT%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=members&style=flat-square&labelColor=211f26&color=5865f2" alt="Discord: members of the D2PFX catalog's server"></a>
@@ -138,8 +139,10 @@ Nothing is injected into Dota's process, and no file of the game is opened while
 - Dota mounts **one** folder, named after its **voice** language. The app sets that language in
   the game's own settings and installs there — **no launch option involved**, which is the part
   worth reading twice. [Why that works](https://dota2modmanager.com/docs/language/)
-- VPK mods go in as `pakNN_dir.vpk`, slots 10 to 99. Categories that must load first get
-  `pak02` to `pak09`. [Slots and load order](https://dota2modmanager.com/docs/vpk/)
+- VPK mods go in as `pakNN_dir.vpk`. Trees, river, shaders, hero effects and the other categories
+  that must load first get `pak02` to `pak29`; everything else starts at `pak30`. `pak64` is the
+  app's own notice text, and `pak65` to `pak67` are left to Minify.
+  [Slots and load order](https://dota2modmanager.com/docs/vpk/)
 - Switching a mod off renames its file to `.off`. The game skips it, the file stays
 - Fonts and cursors go into the game's own folders, with the originals backed up first
 - Everything that writes to the game folder is one transaction: if a step fails, the whole
@@ -186,6 +189,7 @@ installed here survives its uninstall.
 | [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/API.md](docs/API.md) | Which file owns which decision, and every module's exports |
 | [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) · [SECURITY.md](SECURITY.md) | How to work on it, with or without an assistant, and how to report a hole |
 | [docs/assurance-case.md](docs/assurance-case.md) | What could go wrong, what stops it, and the test that proves each answer |
+| [docs/evidence.md](docs/evidence.md) | Every claim above with the CI job that runs it and the command that runs it on your machine |
 | [TRADEMARK.md](TRADEMARK.md) · [Code signing policy](docs/code-signing-policy.md) | What the licence gives you and what it does not, and what is signed today |
 | [Status](https://dota2modmanager.betteruptime.com) | Whether the update feed, the mirror, the catalog and the site are answering right now |
 | [PRIVACY.md](PRIVACY.md) | What is collected (nothing), and every address the app can contact |

@@ -28,6 +28,7 @@
   <img src="https://img.shields.io/github/last-commit/dota2modmanager/dota2-mod-manager?style=flat-square&label=%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D0%B8%D0%B9%20%D0%BA%D0%BE%D0%BC%D0%BC%D0%B8%D1%82&labelColor=211f26&color=8b6ff0" alt="Последний коммит">
   <a href="LICENSE"><img src="https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-GPL--3.0-c4b5fd?style=flat-square&labelColor=211f26" alt="Лицензия"></a>
   <a href="https://dota2modmanager.com/ru/"><img src="https://img.shields.io/badge/%D1%81%D0%B0%D0%B9%D1%82-dota2modmanager.com-c4b5fd?style=flat-square&labelColor=211f26" alt="Сайт"></a>
+  <a href="https://deepwiki.com/dota2modmanager/dota2-mod-manager"><img src="https://img.shields.io/badge/%D1%81%D0%BF%D1%80%D0%BE%D1%81%D0%B8%D1%82%D1%8C-DeepWiki-c4b5fd?style=flat-square&labelColor=211f26" alt="Спросить DeepWiki об этом репозитории"></a>
   <a href="mailto:hello@dota2modmanager.com"><img src="https://img.shields.io/badge/%D0%BF%D0%BE%D1%87%D1%82%D0%B0-hello%40dota2modmanager.com-c4b5fd?style=flat-square&labelColor=211f26" alt="Почта: hello@dota2modmanager.com"></a>
   <a href="https://discord.gg/PBvG8D9MxT"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FPBvG8D9MxT%3Fwith_counts%3Dtrue&query=%24.approximate_presence_count&label=discord&suffix=%20%D0%BE%D0%BD%D0%BB%D0%B0%D0%B9%D0%BD&style=flat-square&labelColor=211f26&color=5865f2&logo=discord&logoColor=white" alt="Discord: сколько человек онлайн на сервере каталога D2PFX, где у приложения свой канал"></a>
   <a href="https://discord.gg/PBvG8D9MxT"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FPBvG8D9MxT%3Fwith_counts%3Dtrue&query=%24.approximate_member_count&label=%D1%83%D1%87%D0%B0%D1%81%D1%82%D0%BD%D0%B8%D0%BA%D0%BE%D0%B2&style=flat-square&labelColor=211f26&color=5865f2" alt="Discord: участников на сервере каталога D2PFX"></a>
@@ -136,8 +137,10 @@ sha256sum --check --ignore-missing SHA256SUMS
 - Дота монтирует **одну** папку, названную по языку **озвучки**. Приложение ставит этот язык в
   настройках самой игры и туда же ставит моды — **без параметра запуска**, и это стоит перечитать
   дважды. [Почему так работает](https://dota2modmanager.com/ru/docs/language/)
-- VPK-моды ложатся как `pakNN_dir.vpk`, слоты с 10 по 99. Кому надо грузиться первым, достаются
-  `pak02`-`pak09`. [Слоты и порядок загрузки](https://dota2modmanager.com/ru/docs/vpk/)
+- VPK-моды ложатся как `pakNN_dir.vpk`. Деревья, река, шейдеры, эффекты героев и другие
+  категории, которым надо грузиться первыми, получают `pak02`-`pak29`, остальные начинаются с
+  `pak30`. `pak64` - собственный текст-плашка приложения, `pak65`-`pak67` оставлены Minify.
+  [Слоты и порядок загрузки](https://dota2modmanager.com/ru/docs/vpk/)
 - Выключенный мод переименовывается в `.off`: игра его пропускает, файл остаётся
 - Шрифты и курсоры уезжают в папки игры, оригиналы сохраняются заранее
 - Всё, что пишется в папку игры, делается одной транзакцией: упало на середине — откатывается
@@ -184,6 +187,7 @@ v1.14rc7 проверяет принадлежность перед чистко
 | [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/API.md](docs/API.md) | Кто за какое решение отвечает и что экспортирует каждый модуль |
 | [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) · [SECURITY.md](SECURITY.md) | Как работать над проектом, с ИИ-ассистентом и без, и как сообщить о дыре |
 | [docs/assurance-case.md](docs/assurance-case.md) | Что может пойти не так, что этому мешает и какой тест это держит |
+| [docs/evidence.md](docs/evidence.md) | Каждое заявление проекта: какая задача CI его проверяет и как проверить самому (на английском) |
 | [TRADEMARK.md](TRADEMARK.md) · [Политика подписи кода](docs/code-signing-policy.ru.md) | Что даёт лицензия и чего она не даёт, и что подписано сегодня |
 | [Статус](https://dota2modmanager.betteruptime.com) | Отвечают ли прямо сейчас фид обновлений, зеркало, каталог и сайт |
 | [PRIVACY.ru.md](PRIVACY.ru.md) | Что собирается (ничего) и каждый адрес, куда приложение может пойти |

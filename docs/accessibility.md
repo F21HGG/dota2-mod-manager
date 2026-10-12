@@ -16,7 +16,9 @@ when there is a check behind it, and the last section says what no automated che
 | 6 | Escape closes a window and answers a question with no | The remove question: Escape, and the mod is still there |
 | 7 | A destructive question says what it will remove | The remove question names the mod; the window e2e checks the same with the mouse |
 | 8 | Nothing sticks out of the window or scrolls sideways at the scales the app offers | `tools/sim/scenarios/settings.js` at 110%, and every simulator screen profile, up to 125% on 1366x768 |
-| 9 | States are not told by colour alone: switches say on or off (`role="switch"`, `aria-checked`), favourites say whether they are pressed (`aria-pressed`) | Promise 2 and axe's ARIA rules |
+| 9 | States are not told by colour alone: switches say on or off (`role="switch"`, `aria-checked`), favourites say whether they are pressed (`aria-pressed`), and the open section and the picked category say they are the current one (`aria-current`) | Promise 2 and axe's ARIA rules; the scenario checks `aria-current` on every section and on the category it picks |
+| 10 | Text over the translucent panels, gradients and pictures has the contrast WCAG asks for: 4.5:1, or 3:1 for large text | Measured on the pixels for every node axe cannot judge (`tools/sim/contrast.js`), on the same screens as promise 1 |
+| 11 | What happens without the focus moving is said out loud: a mod installed, a pack finished, an error (WCAG 4.1.3) | Every toast is also announced through a live region, inside the open window when there is one, since `aria-modal` hides everything outside it (`renderer/ui/a11y.ts`, `announce`). The scenario installs a mod from its window and checks the words reach a region the reader can see |
 
 The scenario runs in the simulator on every pull request, on Windows and on Linux
 (`.github/workflows/sim.yml`), next to the other scenarios.
@@ -33,16 +35,52 @@ The scenario runs in the simulator on every pull request, on Windows and on Linu
 - The panel grips claimed `role="separator"` with a button inside, which a separator may not hold.
 - The simulator pressed Enter without the character Chromium presses a button on, so a test of
   "Enter opens it" could not have passed whatever the app did (`tools/sim/driver.js`).
+- Nothing was ever said without the focus moving. The app had no live region at all, so
+  "installed" and every error were toasts a screen reader never heard; and neither the open section
+  nor the picked category was told, only underlined and highlighted. Found later the same day,
+  writing the checklist for the person below, which is the argument for that pass.
+
+## Contrast axe cannot judge
+
+axe works contrast out from CSS. Behind a translucent panel, a gradient or a picture it cannot know
+the colour, so it reports the text as "incomplete". In this app that was most of the text on screen.
+
+The a11y scenario measures those nodes instead. It captures the window with every glyph's fill made
+transparent, which leaves exactly what is behind the text. For each node it lays the text's colour
+(its alpha times the opacity of everything it sits in) over each pixel under the text, and works out
+the WCAG ratio. A node passes when the pixel at the 2nd percentile reaches the ratio; the worst pixel
+goes in the report as well. Text that is disabled, scrolled out of sight, covered, or behind an open
+window is left out, and the report says which and why. Every run writes `contrast-<screen>.json`
+and the capture it measured, `contrast-<screen>.png`.
+
+Measured on 2026-10-11, in a 1360x860 window on a 1920x1080 screen, default theme, after the
+change below:
+
+| Screen | Measured | Short of its ratio | Lowest that passes |
+|---|---|---|---|
+| Catalog | 64 | 0 | 4.78:1 |
+| My mods | 19 | 0 | 7.81:1 |
+| Presets | 20 | 0 | 7.81:1 |
+| Settings | 36 | 0 | 7.81:1 |
+| A mod's window | 5 | 0 | 9.33:1 |
+| The remove question | 3 | 0 | 7.72:1 |
+
+The first measurement found one thing short. The category under a card's name was `--text-faint`
+at 62% of on-surface-variant; the cards are translucent and the page's gradient is lighter on the
+right, so the same caption measured 4.53:1 on the first card of "Recently added" and 4.03:1 on the
+fourth. The maintainer chose to raise the token to 70%, which changes 51 places in the app. The
+caption now measures 4.78 to 5.53:1 on that screen and 4.73 to 5.33:1 at 125% on 1366x768, and any
+text short of its ratio fails the run.
+
+What the measurement does not cover: the seven hero themes other than the default, and text that
+only appears on hover.
 
 ## What no automated check covers
 
-- **Contrast over the translucent panels.** axe reports these as "incomplete": it cannot see the
-  colour behind a semi-transparent surface. Each run writes them to `axe-<section>.json` beside its
-  pictures for a person to look at.
 - **A screen reader pass by a person.** The tree is checked, the experience is not: whether the
-  order things are announced in makes sense, whether a progress toast is heard. NVDA or Narrator
-  over the four sections, a mod window and the install queue, once before a release that changes
-  a screen.
+  order things are announced in makes sense, whether an announcement comes at the right moment.
+  [screen-reader-pass.md](screen-reader-pass.md) is the fifteen minutes it takes with NVDA or
+  Narrator, once before a release that changes a screen, and where the results go.
 - **Dragging.** The panel grips and the load order are dragged with a mouse. Each has a keyboard
   route that does the same job (the grips' fold buttons and Ctrl + / - / 0; the load order's
   move up and down), but not the drag itself.
