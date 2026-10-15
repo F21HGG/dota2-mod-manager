@@ -43,6 +43,10 @@ export interface CosmeticOption {
   id: string;
   name: string;
   tags?: string[];
+  /** an item builder wearable's styles by name, when it has more than one (src/item-builder-styles.ts) */
+  styles?: string[];
+  /** what is known to go wrong with it in the game, or that nobody has checked (src/arcana-notes.ts) */
+  note?: { status: 'issues' | 'broken' | 'untested'; text: string };
 }
 
 /** A slot of free cosmetics, or one of the item builder's (kind 'item-effect', slot 'item:...'). */

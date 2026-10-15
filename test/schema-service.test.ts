@@ -15,9 +15,10 @@ import path from 'node:path';
 
 import * as patcher from '../src/patcher.ts';
 import * as schema from '../src/schema.ts';
-import { readVpkEntryFile } from '../src/vpk.ts';
+import { entryAt, readVpkEntryFile } from '../src/vpk.ts';
+import { encodeKv3, resource } from './helpers/kv3-build.ts';
 import { Library } from '../src/library.ts';
-import { createSchemaService, type SchemaInstaller } from '../src/schema-service.ts';
+import { builderStamp, createSchemaService, type SchemaInstaller } from '../src/schema-service.ts';
 import type { Settings } from '../src/settings.ts';
 import type { LibFile, LibRecord } from '../src/types.ts';
 
@@ -196,6 +197,33 @@ test('a game update is noticed, and repaired: the patch put back and the table r
   assert.deepEqual(s.svc.heal(), { ok: true, healed: [] }, 'a second look finds nothing to do');
 });
 
+test('a table built by older code is rebuilt at the next start or launch, the game unchanged', (t) => {
+  // the picks kept the files the old item builder made, until each was taken off and picked again
+  const s = service(t);
+  modWith(s.library, 'Rifle mod', [riflePatch('models/mod/rifle.vmdl')]);
+  s.svc.setEnabled(true);
+  assert.deepEqual(s.svc.heal(), { ok: true, healed: [] });
+  const built = String(s.settings.get('schemaStamp'));
+  assert.ok(built.endsWith(`|${builderStamp()}`), 'the stamp names the code as well as the game');
+  s.settings.set('schemaStamp', built.replace(/\|[^|]+$/, '|older'));
+  assert.equal(s.svc.state().stale, true);
+  assert.deepEqual(s.svc.heal(), { ok: true, healed: ['schema'] });
+  assert.equal(s.settings.get('schemaStamp'), built);
+});
+
+test("the code's fingerprint follows its files", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2mm-code-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'a.ts'), 'one');
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'not code');
+  const before = builderStamp(dir);
+  fs.writeFileSync(path.join(dir, 'notes.md'), 'still not code');
+  assert.equal(builderStamp(dir), before);
+  fs.writeFileSync(path.join(dir, 'a.ts'), 'two');
+  assert.notEqual(builderStamp(dir), before);
+  assert.equal(builderStamp(path.join(dir, 'missing')), null, 'unreadable: nothing to compare, nothing rebuilt for it');
+});
+
 test('a signed patch built from an older gameinfo.gi is rebuilt from the new one', (t) => {
   // Build 6946: gameinfo.gi renamed the language key, the branch file was not in the update, and
   // the signature list did not lose our line. Nothing but the search paths themselves changed.
@@ -363,4 +391,46 @@ test('without a game path nothing is attempted, and the answers say so', (t) => 
   const st = s.svc.state();
   assert.equal(st.deployed, false);
   assert.equal(st.patched, false);
+});
+
+// ---------- an item's sounds, voice and styles ----------
+
+/** Earthshaker's stock arms and an immortal for them with two styles, a sound swap and a voice. */
+const ES = ['"used_by_heroes"', '{', '\t"npc_dota_hero_earthshaker"\t\t"1"', '}'];
+const STYLED_TABLE = table([
+  item('700', ['"name"\t\t"Earthshaker\'s Bracers"', '"prefab"\t\t"default_item"', '"item_slot"\t\t"arms"', ...ES]),
+  item('7293', ['"name"\t\t"Bracers of the Cavern Luminar"', '"prefab"\t\t"wearable"', '"item_slot"\t\t"arms"', ...ES, '"visuals"', '{',
+    '\t"styles"', '\t{', '\t\t"0"', '\t\t{', '\t\t\t"name"\t\t"#DOTA_Style_Luminar_0"', '\t\t}', '\t\t"1"', '\t\t{', '\t\t\t"name"\t\t"#DOTA_Style_Gone"', '\t\t}', '\t}',
+    '\t"asset_modifier"', '\t{', '\t\t"type"\t\t"sound"', '\t\t"asset"\t\t"Hero_EarthShaker.Totem"', '\t\t"modifier"\t\t"Hero_EarthShaker.Totem.Immortal"', '\t}',
+    '\t"asset_modifier"', '\t{', '\t\t"type"\t\t"response_criteria"', '\t\t"asset"\t\t"luminar"', '\t}',
+    '}']),
+  ...FILLER,
+]);
+const soundFile = (events: [string, string][]) => resource([['DATA', encodeKv3({ obj: events.map(([name, file]) => [name, { obj: [['vsnd_files', { arr: [{ str: file }] }]] }]) })]]);
+
+test("a pick's sounds go into the built table's pak, its styles are named from the game, and a broken file costs only the sounds", (t) => {
+  const s = service(t, { values: { schemaPatch: true }, text: STYLED_TABLE });
+  const pak = (rules: Buffer) => fs.writeFileSync(path.join(s.game, 'dota', 'pak01_dir.vpk'), schema.buildSchemaVpk(STYLED_TABLE, [
+    entryAt('resource/localization/dota_english.txt', Buffer.from('"lang"\n{\n\t"Tokens"\n\t{\n\t\t"DOTA_Style_Luminar_0"\t"Celestial Wisdom"\n\t}\n}\n')),
+    entryAt('soundevents/game_sounds_heroes/game_sounds_earthshaker.vsndevts_c', soundFile([['Hero_EarthShaker.Totem', 'sounds/totem.vsnd']])),
+    entryAt('soundevents/game_sounds_items.vsndevts_c', soundFile([['Hero_EarthShaker.Totem.Immortal', 'sounds/totem_immortal.vsnd']])),
+    entryAt('scripts/talker/response_rules_earthshaker.vrr_c', rules),
+  ]));
+  pak(resource([['DATA', encodeKv3({ obj: [['m_Requirements', { arr: [] }], ['m_ResponseGroups', { arr: [] }]] })]]));
+
+  const bracers = s.svc.cosmeticSlots().slots.flatMap((x) => x.options as { id: string; styles?: string[] }[]).find((o) => o.id === '7293');
+  assert.deepEqual(bracers?.styles, ['Celestial Wisdom', 'Style 2'], "the game's name, or the style's number where the game has none");
+
+  s.svc.pickCosmetic('item:earthshaker:arms', '7293', 'Bracers of the Cavern Luminar', 'style-1');
+  const built = path.join(s.game, patcher.FOLDER, schema.SCHEMA_VPK);
+  const totem = readVpkEntryFile(built, 'soundevents/game_sounds_heroes/game_sounds_earthshaker.vsndevts_c');
+  assert.ok(totem, 'the hero sound file goes in beside the table');
+  assert.match(totem.data.toString('latin1'), /totem_immortal\.vsnd/, 'its totem plays the immortal one');
+
+  // a rules file the reader cannot open: the pick still goes on, without its sounds, and the log says so
+  pak(Buffer.from('not a resource'));
+  s.svc.pickCosmetic('item:earthshaker:arms', '7293', 'Bracers of the Cavern Luminar', '');
+  assert.equal(readVpkEntryFile(built, 'soundevents/game_sounds_heroes/game_sounds_earthshaker.vsndevts_c'), null);
+  assert.match(deployedTable(s.game) as string, /Bracers of the Cavern Luminar/);
+  assert.ok(s.said.some((m) => /sounds left out of the build/.test(m)), s.said.join('\n'));
 });

@@ -1,5 +1,5 @@
-/* One slot of a hero: its wearables to choose from, the effects to put on top, and the button that
- * puts the choice on. Nothing reaches the game until it is pressed (views/item-builder.ts,
+/* One slot of a hero: its wearables to choose from, the chosen one's styles when it has several,
+ * the effects to put on top, and the button that puts the choice on. Nothing reaches the game until it is pressed (views/item-builder.ts,
  * stagedItemAction): a pick used to be written on every click. The card the border marks is the
  * one chosen here; "Надето" is said only of what the game shows. */
 import { catalogName } from '../../ui/catalog-name.ts';
@@ -9,8 +9,13 @@ import { cosmeticName } from '../../ui/cosmetic-name.ts';
 import type { SlotPickerActions, SlotPickerModel } from './model.ts';
 import { BuilderFoot, BuilderHead, CosThumb, EmptySearch, PickerSearch } from './parts.tsx';
 
+/** The words on an item's note tag (src/arcana-notes.ts); the note itself is its tooltip, and the
+ *  chosen item's note is spelled out under its name at the foot, beside the button that puts it on. */
+const NOTE_TAG = { issues: () => L`Есть баги`, broken: () => L`Сломана`, untested: () => L`Не проверено` } as const;
+
 export function SlotPicker({ m, actions }: { m: SlotPickerModel; actions: SlotPickerActions }) {
   const search = useRef<HTMLInputElement>(null);
+  const noted = m.options.find((o) => o.picked && o.note)?.note;
   const clear = () => {
     actions.search('');
     search.current?.focus();
@@ -27,6 +32,7 @@ export function SlotPicker({ m, actions }: { m: SlotPickerModel; actions: SlotPi
             style={{ '--i': Math.min(i, 24) } as CSSProperties} onClick={() => actions.choose(o.id)}>
             <div className="card-media">
               {o.id === '' ? <div className="noimg"><span className="ms">block</span></div> : <CosThumb name={o.name} fallback={m.slotIcon} />}
+              {o.note && <div className="media-tags"><span className="mtag warn" title={o.note.text}>{NOTE_TAG[o.note.status]()}</span></div>}
             </div>
             <div className="card-body">
               <div className="card-name" title={o.name}>{cosmeticName(o.name)}</div>
@@ -35,6 +41,20 @@ export function SlotPicker({ m, actions }: { m: SlotPickerModel; actions: SlotPi
           </button>
         )) : <EmptySearch onClear={clear} />}
       </div>
+      {m.styles && (
+        <>
+          <div className="section-h item-fx-head"><span className="ms">palette</span>{L`Стиль`}</div>
+          <div className="item-pick-grid" id="styleGrid">
+            {m.styles.map((s) => (
+              <button key={s.index} className={`card item-pick-card ${s.picked ? 'picked' : ''}`} data-style={s.index}
+                style={{ '--i': s.index } as CSSProperties} aria-pressed={s.picked} onClick={() => actions.style(s.index)}>
+                <div className="card-media"><div className="noimg"><span className="ms">palette</span></div></div>
+                <div className="card-body"><div className="card-name" title={s.name}>{s.name}</div></div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {m.effects && (
         <>
           <div className="section-h item-fx-head"><span className="ms">auto_awesome</span>{L`Эффекты`}</div>
@@ -64,7 +84,8 @@ export function SlotPicker({ m, actions }: { m: SlotPickerModel; actions: SlotPi
       <div className="modal-note">{L`Вид подставляется в схему предметов игры — стандартный предмет просто рисуется как выбранный. Файлы модов это не трогает, и видно только тебе.`}</div>
       <div className="item-picker-foot" id="itemPickFoot">
         <BuilderFoot action={m.action} onApply={actions.apply}
-          summary={<><b>{cosmeticName(m.summary.name)}</b>{m.summary.effects ? ` · ${m.summary.effects}` : ''}</>} />
+          summary={<><b>{cosmeticName(m.summary.name)}</b>{m.summary.effects ? ` · ${m.summary.effects}` : ''}
+            {noted && <span className="item-note" role="note"><span className="ms">warning</span>{noted.text}</span>}</>} />
       </div>
     </div>
   );

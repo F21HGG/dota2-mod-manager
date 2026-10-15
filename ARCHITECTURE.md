@@ -333,6 +333,12 @@ the background and most people press Play in Steam, and the repair runs by itsel
 also rebuilt when it was copied from an older `gameinfo.gi` than the game has: build 6946 renamed
 the language path key, and a patch from the day before stopped mounting the language folder.
 
+The built table is rebuilt the same way when the app's own code changed, at the next start or press
+of Play. Picks are kept as records and built from the game's files, so their models, sounds and
+pictures are only as right as the code that built them: the stamp in settings names both the game's
+item table and a fingerprint of `src/` (`builderStamp`). Before it, a fix to the item builder never
+reached a pick until the pick was taken off and made again.
+
 After the repair, `src/update-impact.ts` compares Valve's files that installed mods replace with
 what the update shipped. A mod whose copies the patch changed or removed is marked "pre-patch" in
 My mods and named in the banner about the update: it now puts old files back over new ones.
@@ -535,6 +541,11 @@ that location is not writable.
 | `src/schema-service.ts`, `src/schema-cosmetics.ts`, `src/schema-harvest.ts` | The item table as the app keeps it: the build and the repair, the free cosmetics, and a mod's own blocks |
 | `src/cosmetic-names.ts` | Official Chinese item names from the installed game's localization tokens; read-only and cached per game build |
 | `src/item-builder.ts`, `src/item-builder-slots.ts`, `src/item-builder-effects.ts` | The item builder: what it offers each hero and slot, the effects, and what a pick writes |
+| `src/item-builder-styles.ts` | An item's styles, and its visuals with the chosen one made its only one: a pick in another style rides in its effect key as `style-N` |
+| `src/item-builder-assets.ts` | What a pick needs beyond its block: the game's files under the plain paths (models, particles, an arcana's hero model, the hero's portrait, minimap and ability pictures) and the sounds, voice, portrait settings and minimap sprite it switches |
+| `src/arcana-notes.ts` | What each arcana does in the game once the builder puts it on, from a pass through every one: a note with its problems, or that it is broken or not checked, which the slot window shows on the item |
+| `src/item-portraits.ts` | A hero's HUD portrait camera and lights (`scripts/npc/portraits.txt`) and minimap sprite (`scripts/mod_textures.txt`) as the picks make them, every pick's in one copy of each file |
+| `src/item-sounds.ts` | An item's sounds and an arcana's voice, which the server gives only to the item's owner: the plain sound events rewritten as the item's in the game's soundevents files, every pick's in one copy of each |
 | `src/notice-text.ts`, `src/notice-texts.ts` | The game's anti-cheat notice in words that say what to do, in every language Dota ships |
 | `src/terrain-age.ts` | Terrains that replace the whole map, and whether the game's map has moved on since |
 | `src/mod-id.ts`, `src/fingerprints.ts`, `src/hero-names.ts` | What a mod replaces, asked of the game; recognising a file somebody else installed; which hero a name means |

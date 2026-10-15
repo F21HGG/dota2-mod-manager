@@ -13,11 +13,23 @@
 import { heroDisplayName } from './vpk.ts';
 import { t } from './i18n.ts';
 import { listItems, toUtf8, eachChild, blockBounds, itemSearchText, inferredItemSlot, type SchemaItem } from './schema.ts';
+import { styleTokens } from './item-builder-styles.ts';
+import { itemNote, type ItemNote } from './arcana-notes.ts';
 
 /** A slot of a hero the builder can dress, and the paid items that fit it. */
 export interface ItemSlot {
   slot: string; kind: 'item-effect'; base: string; targetId: string; equipSlot: string; heroIds: string[];
-  heroLabel: string; slotLabel: string; label: string; icon: string; options: { id: string; name: string }[];
+  heroLabel: string; slotLabel: string; label: string; icon: string;
+  /** `styles`: the name token of each style, for an item with more than one (src/item-builder-styles.ts);
+   *  `note`: what is known to go wrong with it in the game, or that nobody has checked (src/arcana-notes.ts) */
+  options: { id: string; name: string; styles?: string[]; note?: ItemNote }[];
+}
+
+/** An item's visuals block, as text; null when it has none. */
+function visualsOf(text: string, item: { start: number }): string | null {
+  let out: string | null = null;
+  eachChild(text, blockBounds(text, item.start), (c) => { if (!out && c.isBlock && c.key.toLowerCase() === 'visuals') out = text.slice(c.start, c.end); });
+  return out;
 }
 
 /** One piece of a set: where it goes, or why it does not. */
@@ -28,10 +40,13 @@ type SetPiece =
 /** A set, as the builder puts it on; see itemSets. */
 export interface ItemSet { id: string; name: string; heroIds: string[]; fit: number; heroLabel: string; pieces: SetPiece[] }
 
-/** A file in the game's archive staged under another path in the built VPK. */
-export type AssetCopy = { from: string; to: string };
-
-const ITEM_HIDDEN_HEROES = new Set(['wisp', 'io']);
+/**
+ * A file in the game's archive staged under another path in the built VPK; an `optional` one (a
+ * picture the game has in some of its folders only) is left out when the game has not got it. A hero's own model
+ * names the hero instead of a path: where its model lives is in the hero's script, which the
+ * table does not say, and it goes in with the item's activity modifiers taken off (arcana.ts asModel).
+ */
+export type AssetCopy = { from: string; to: string; optional?: boolean } | { from: string; hero: string; activities: string[] };
 
 const ITEM_SLOT_MATCH_ALIAS: Record<string, string> = {
   offhand_weapon: 'offhand',
@@ -72,10 +87,6 @@ export function matchItemSlot(slot: unknown): string {
   return ITEM_SLOT_MATCH_ALIAS[clean] || clean;
 }
 
-function hiddenItemHeroes(heroes: string[]): boolean {
-  return heroes.some((hero) => ITEM_HIDDEN_HEROES.has(canonicalHeroId(hero)));
-}
-
 function itemSlotId(heroIds: string[], slot: string): string {
   return `item:${heroIds.join('+')}:${slot}`;
 }
@@ -95,18 +106,20 @@ function itemSlotLabel(heroIds: string[], slot: string): string {
   return `${heroes} · ${slotDisplayLabel(slot)}`;
 }
 
-/** An arcana, a persona or a hero's base model, by its name or its slot: the builder leaves these alone. */
-export function isArcanaPersonaItem(item: Partial<SchemaItem> | null): boolean {
-  const text = itemSearchText(item);
+/**
+ * A persona, by its name or its slot: the builder leaves these alone. A persona is a second hero
+ * with slots of its own, and no stock item stands in for one.
+ *
+ * Arcanas used to be left alone as well, and so did the hero_base slot most of them sit in. They
+ * are items like any other: each hero with a hero_base arcana has a stock "<Hero>'s Base" to
+ * dress (twelve on the game of 2026-10-15), and what an arcana needs beyond its block is its hero
+ * model under the plain one's path, which item-builder.ts itemEffectPatch now lists.
+ */
+export function isPersonaItem(item: Partial<SchemaItem> | null): boolean {
   const slot = canonicalItemSlot(inferredItemSlot(item));
-  return text.includes('arcana')
-    || text.includes('persona')
+  return itemSearchText(item).includes('persona')
     || slot === 'persona_selector'
-    || /_persona_\d+$/i.test(slot)
-    || slot === 'hero_base'
-    || slot === 'voice_persona_1'
-    || slot === 'summon_persona_1'
-    || slot === 'shapeshift_persona_1';
+    || /_persona_\d+$/i.test(slot);
 }
 
 function itemSlotIcon(slot: string): string {
@@ -132,9 +145,9 @@ export function itemSlots(text: string): ItemSlot[] {
   const matchSlots = new Map<string, string[]>();
   for (const item of items) {
     const equipSlot = canonicalItemSlot(inferredItemSlot(item));
-    if (item.prefab !== 'default_item' || !equipSlot || isArcanaPersonaItem(item)) continue;
+    if (item.prefab !== 'default_item' || !equipSlot || isPersonaItem(item)) continue;
     const heroes = heroesOf(item);
-    if (!heroes.length || hiddenItemHeroes(heroes)) continue;
+    if (!heroes.length) continue;
     const heroIds = heroes.map(canonicalHeroId);
     const slotId = itemSlotId(heroIds, equipSlot);
     slots.set(slotId, {
@@ -157,9 +170,9 @@ export function itemSlots(text: string): ItemSlot[] {
   }
   for (const item of items) {
     const equipSlot = canonicalItemSlot(inferredItemSlot(item));
-    if (item.prefab !== 'wearable' || !equipSlot || !item.name || isArcanaPersonaItem(item)) continue;
+    if (item.prefab !== 'wearable' || !equipSlot || !item.name || isPersonaItem(item)) continue;
     const heroes = heroesOf(item);
-    if (!heroes.length || hiddenItemHeroes(heroes)) continue;
+    if (!heroes.length) continue;
     const heroIds = heroes.map(canonicalHeroId);
     const slotId = itemSlotId(heroIds, equipSlot);
     let target: ItemSlot | null | undefined = slots.get(slotId);
@@ -168,7 +181,14 @@ export function itemSlots(text: string): ItemSlot[] {
       if (hits.length === 1) target = slots.get(hits[0]) || null;
     }
     if (!target) continue;
-    target.options.push({ id: item.id, name: toUtf8(item.name) });
+    const block = text.slice(item.start, item.end);
+    const styles = block.includes('"styles"') ? styleTokens(visualsOf(text, item)) : [];
+    const noted = itemNote(heroIds, block);
+    target.options.push({
+      id: item.id, name: toUtf8(item.name),
+      ...(styles.length ? { styles } : {}),
+      ...(noted ? { note: { status: noted.status, text: t(noted.note) } } : {}),
+    });
   }
 
   const order = new Map(ITEM_SLOT_ORDER.map((slot, i) => [slot, i]));
@@ -192,7 +212,7 @@ export function itemSlots(text: string): ItemSlot[] {
  *
  * Only hero items are listed. A set's loading screen, cursor, HUD, ward, announcer or taunt
  * has a tab of its own or is not the app's to set, and nobody puts one on with a set. A hero
- * item the builder leaves alone (an arcana, a persona) is listed as not fitting, with why: it
+ * item the builder leaves alone (a persona) is listed as not fitting, with why: it
  * is part of what the set looks like. A set with nothing to put on is left out, and so is a store
  * bundle of several sets ("Bounty Hunter's Big Bundle": 22 items, 7 slots): more of its pieces
  * want a taken slot than fit, and the first of each would dress the hero in a mix of sets that
@@ -209,7 +229,7 @@ export function itemSets(text: string, slots: Pick<ItemSlot, 'slot' | 'slotLabel
   for (const set of items) {
     if (set.prefab !== 'bundle' || !set.bundleItems || !set.bundleItems.length || /do not use/i.test(set.name)) continue;
     const heroes = itemHeroes(text, set);
-    if (!heroes.length || hiddenItemHeroes(heroes)) continue;
+    if (!heroes.length) continue;
     const pieces: SetPiece[] = [];
     const taken = new Set<string>();
     let collide = 0;
@@ -224,7 +244,7 @@ export function itemSets(text: string, slots: Pick<ItemSlot, 'slot' | 'slotLabel
       }
       if (at) collide++;
       const reason = at ? t('второй предмет на тот же слот')
-        : isArcanaPersonaItem(it) ? t('аркана или персона: конструктор их не меняет')
+        : isPersonaItem(it) ? t('персона: конструктор их не меняет')
           : t('для него нет слота в конструкторе');
       pieces.push({ name: toUtf8(it.name), itemId: it.id, fits: false, reason });
     }

@@ -17,6 +17,7 @@ the code, not in this page.
 | [`src/app-context.ts`](#srcapp-contextts) | Everything the running app hands its IPC modules: the services src/main.ts builds at start, and the |
 | [`src/app-log.ts`](#srcapp-logts) | The app's own log: a small file every install keeps, so a support report (src/diagnostics.ts) |
 | [`src/app-page.ts`](#srcapp-pagets) | The page the main window loads. |
+| [`src/arcana-notes.ts`](#srcarcana-notests) | What an arcana does in the game once the item builder puts it on, as somebody played it. |
 | [`src/arcana-service.ts`](#srcarcana-servicets) | The arcana window's side in the main process (issue #118): what the window shows, and the mod it |
 | [`src/arcana.ts`](#srcarcanats) | An arcana as a mod, built from the game's own files: the look of an item a player has not got, |
 | [`src/atomic-file.ts`](#srcatomic-filets) | Replace a small file so that whoever reads it next - this process, or the next start after |
@@ -64,9 +65,13 @@ the code, not in this page.
 | [`src/installer-write.ts`](#srcinstaller-writets) | Writing a mod into the game folder and taking it out again (src/installer.ts is the door): a |
 | [`src/installer.ts`](#srcinstallerts) | The installer: everything that writes a mod into the game folder or takes it out again. The |
 | [`src/ipc.ts`](#srcipcts) | Every IPC module, registered in one place over the context src/main.ts builds. A new |
+| [`src/item-builder-assets.ts`](#srcitem-builder-assetsts) | What an item builder pick needs beyond its block in items_game: the game's files it puts under |
 | [`src/item-builder-effects.ts`](#srcitem-builder-effectsts) | The particle effects the item builder can put on top of an item: the effect's id, its name in |
 | [`src/item-builder-slots.ts`](#srcitem-builder-slotsts) | The item builder's offer: for each hero, the slots it can dress, the paid wearables that fit |
+| [`src/item-builder-styles.ts`](#srcitem-builder-stylests) | An item's styles in the item builder: which ones it has, and its visuals with one of them made |
 | [`src/item-builder.ts`](#srcitem-builderts) | The item builder: a hero's stock item built from one of its wearables, with an effect on top. |
+| [`src/item-portraits.ts`](#srcitem-portraitsts) | A hero's HUD portrait and minimap icon as an item builder pick makes them, written once for the |
+| [`src/item-sounds.ts`](#srcitem-soundsts) | An item's sounds and voice, as a mod gives them to a hero who does not own the item. |
 | [`src/item-visuals.ts`](#srcitem-visualsts) | What an item does to the game, read from its block in items_game ("visuals"), and what a mod |
 | [`src/kv3-blobs.ts`](#srckv3-blobsts) | Binary blobs in a KV3 block (src/kv3.ts): where they lie, how they are read, and how they are |
 | [`src/kv3-cells.ts`](#srckv3-cellsts) | The numbers in a parsed KV3 block (src/kv3.ts): read one where it lies, change it there, and the |
@@ -260,6 +265,97 @@ export function loadAppPage(win: Pick<BrowserWindow, 'loadURL' | 'loadFile'>, { 
 
 Loads the page into the window and returns its address, the one the navigation guard lets
 through, or null when a checkout was never built (an installer always carries the page).
+
+## src/arcana-notes.ts
+
+What an arcana does in the game once the item builder puts it on, as somebody played it.
+
+The builder offers every arcana, and most of them work. Some do not quite: an arcana carries its
+own animations, and a few of them need things only the real item turns on, so Razor walks facing
+backwards and Earthshaker can sink into the ground. An arcana that is not known to work carries a
+note to the slot window, so nobody picks Razor's and goes looking for what they did wrong.
+
+The table is J0nathan550's pass through every arcana on 2026-10-15 (pull request #275). A hero
+here by its id as items_game names it (npc_dota_hero_<id>). An arcana of a hero who is in neither
+list, one Valve adds later, is not checked yet and says so. None of Io's items had been offered
+before, its arcana (Benevolent Companion) among them, so all of them say they are not checked.
+
+The notes are written in Russian, the app's source language, and translated where they are shown
+(src/i18n.ts).
+
+### `ItemNoteStatus`
+
+```ts
+export type ItemNoteStatus = 'issues' | 'broken' | 'untested'
+```
+
+What an arcana does in the game once the item builder puts it on, as somebody played it.
+
+The builder offers every arcana, and most of them work. Some do not quite: an arcana carries its
+own animations, and a few of them need things only the real item turns on, so Razor walks facing
+backwards and Earthshaker can sink into the ground. An arcana that is not known to work carries a
+note to the slot window, so nobody picks Razor's and goes looking for what they did wrong.
+
+The table is J0nathan550's pass through every arcana on 2026-10-15 (pull request #275). A hero
+here by its id as items_game names it (npc_dota_hero_<id>). An arcana of a hero who is in neither
+list, one Valve adds later, is not checked yet and says so. None of Io's items had been offered
+before, its arcana (Benevolent Companion) among them, so all of them say they are not checked.
+
+The notes are written in Russian, the app's source language, and translated where they are shown
+(src/i18n.ts).
+
+### `ItemNote`
+
+```ts
+export interface ItemNote { status: ItemNoteStatus; text: string }
+```
+
+_No description in the source._
+
+### `ARCANA_NOTES`
+
+```ts
+export const ARCANA_NOTES: Readonly<Record<string, { status: Exclude<ItemNoteStatus, 'untested'>; note: string }>> =
+```
+
+Arcanas played and found wanting, by hero.
+
+### `ARCANAS_THAT_WORK`
+
+```ts
+export const ARCANAS_THAT_WORK: ReadonlySet<string> = new Set([ 'faceless_void', 'lina', 'monkey_king', 'ogre_magi', 'phantom_assassin', 'queenofpain', 'nevermore', 'techies', 'tidehunter', 'vengefulspirit', 'skeleton_king', 'zuus', ])
+```
+
+Arcanas played and found to work, by hero.
+
+### `HEROES_NOT_CHECKED`
+
+```ts
+export const HEROES_NOT_CHECKED: ReadonlySet<string> = new Set(['wisp'])
+```
+
+Heroes none of whose items have been played through the builder yet.
+
+### `isArcanaBlock`
+
+```ts
+export function isArcanaBlock(block: string): boolean
+```
+
+Whether an item's block in items_game says it is an arcana.
+
+### `itemNote`
+
+```ts
+export function itemNote(heroIds: string[], block: string): { status: ItemNoteStatus; note: string } | null
+```
+
+The note an item builder option carries, untranslated, or null when it has none.
+
+```
+@param heroIds  the item's heroes, as items_game names them without the npc_dota_hero_ prefix
+@param block    the item's block in items_game
+```
 
 ## src/arcana-service.ts
 
@@ -749,6 +845,19 @@ export function cosmeticNameTable(items: Pick<SchemaItem, 'name' | 'itemName'>[]
 ```
 
 Resolve by item_name token, never by guessing a translation from the English title.
+
+### `styleNamer`
+
+```ts
+export function styleNamer(game: string, lang: string, fallback: (index: number) => string): (token: string, index: number) => string
+```
+
+An item style's name in the app's language, from the game's own localization by the style's
+token (#DOTA_Style_Bladeform_Legacy_1); "Стиль 2" for a token the game has no text for.
+
+```
+@param lang  the app's language (src/i18n.ts getLang)
+```
 
 ### `chineseCosmeticNames`
 
@@ -2790,6 +2899,95 @@ export function registerIpc(ctx: AppContext): void
 
 Register every channel the window can call.
 
+## src/item-builder-assets.ts
+
+What an item builder pick needs beyond its block in items_game: the game's files it puts under
+the plain paths (models, particles, the hero's own model), and the sounds and voice it makes the
+hero's own (src/item-sounds.ts writes those). src/item-builder.ts makes the block and asks this
+for the rest; the build reads the files out of pak01 here, in gameAssetEntries.
+
+### `SpriteSwap`
+
+```ts
+export interface SpriteSwap { sprite: string; as: string }
+```
+
+A sprite of the game's sprite sheets shown in place of another (the minimap's hero icons are).
+
+### `PortraitSwap`
+
+```ts
+export interface PortraitSwap { model: string; hero: string }
+```
+
+A hero model whose HUD portrait settings go under the hero's own model's path.
+
+### `ItemAssets`
+
+```ts
+export interface ItemAssets { assetCopies: AssetCopy[]; sounds: SoundSwap[]; voices: VoiceCue[]; portraits: PortraitSwap[]; sprites: SpriteSwap[] }
+```
+
+What a pick asks of the game's files, beside its block.
+
+### `normalizeAssetPath`
+
+```ts
+export function normalizeAssetPath(p: unknown): string
+```
+
+_No description in the source._
+
+### `itemAssets`
+
+```ts
+export function itemAssets(text: string, visuals: string, heroes: string[]): ItemAssets
+```
+
+The files an item's visuals swap, to stage under the plain paths: particles, models, and the
+hero's own model (an arcana's entity_model) with the item's activity modifiers to take off it;
+and the sound events and voice it switches, which the server only switches for its owner.
+
+Only the first style's: the patch leaves the item in its first style, which is the chosen one
+written as the first (src/item-builder-styles.ts). Bladeform Legacy swaps every one of its
+particles twice, once per style, and the second would have won.
+
+The pictures it swaps for the hero's (PICTURES): its portrait, minimap icon and ability icons;
+the minimap draws its hero icons out of a sprite sheet as well, so that sprite is swapped too.
+An arcana's hero model brings its HUD portrait's camera and lights (src/item-portraits.ts).
+
+Only what the hero has on without the item. An entity_model for another unit is left alone:
+Rubick's arcana reshapes Spirit Bear and a dozen other heroes' summons for when he steals them.
+So is a model swap for anything but a stock item of the hero's: Queen of Pain's arcana lists 40,
+nearly all refits of paid shoulders to its body, and under their plain paths everyone wearing
+one would have the refit (and one of them is not in the game's files at all). The stock ones are
+what is worn under the arcana: Zeus's vest and bracers become an invisible box, its body has them.
+Some items number their entries (asset_modifier0, asset_modifier1: Zeus's and Phantom Assassin's
+arcanas), and those were read as no entries at all.
+
+```
+@param text  items_game, for the hero's stock models
+@param heroes  the item's heroes, npc_dota_hero_*
+```
+
+### `heroModelPath`
+
+```ts
+export function heroModelPath(ix: ReturnType<typeof openVpkIndex>, hero: string): string
+```
+
+Where a hero's own model lives: the first "Model" in its script, which is the hero's (the ones
+after it are its summons'). Shadow Fiend is npc_dota_hero_nevermore in models/heroes/shadow_fiend,
+so the path cannot be made from the name.
+
+### `gameAssetEntries`
+
+```ts
+export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined): VpkEntry[]
+```
+
+Read compiled asset bytes out of pak01 and stage them under the renamed path in our VPK.
+
 ## src/item-builder-effects.ts
 
 The particle effects the item builder can put on top of an item: the effect's id, its name in
@@ -2861,10 +3059,13 @@ A set, as the builder puts it on; see itemSets.
 ### `AssetCopy`
 
 ```ts
-export type AssetCopy = { from: string; to: string }
+export type AssetCopy = { from: string; to: string; optional?: boolean } | { from: string; hero: string; activities: string[] }
 ```
 
-A file in the game's archive staged under another path in the built VPK.
+A file in the game's archive staged under another path in the built VPK; an `optional` one (a
+picture the game has in some of its folders only) is left out when the game has not got it. A hero's own model
+names the hero instead of a path: where its model lives is in the hero's script, which the
+table does not say, and it goes in with the item's activity modifiers taken off (arcana.ts asModel).
 
 ### `canonicalItemSlot`
 
@@ -2882,13 +3083,19 @@ export function matchItemSlot(slot: unknown): string
 
 A slot name with its aliases folded together (offhand_weapon is offhand, shoulder is shoulders).
 
-### `isArcanaPersonaItem`
+### `isPersonaItem`
 
 ```ts
-export function isArcanaPersonaItem(item: Partial<SchemaItem> | null): boolean
+export function isPersonaItem(item: Partial<SchemaItem> | null): boolean
 ```
 
-An arcana, a persona or a hero's base model, by its name or its slot: the builder leaves these alone.
+A persona, by its name or its slot: the builder leaves these alone. A persona is a second hero
+with slots of its own, and no stock item stands in for one.
+
+Arcanas used to be left alone as well, and so did the hero_base slot most of them sit in. They
+are items like any other: each hero with a hero_base arcana has a stock "<Hero>'s Base" to
+dress (twelve on the game of 2026-10-15), and what an arcana needs beyond its block is its hero
+model under the plain one's path, which item-builder.ts itemEffectPatch now lists.
 
 ### `itemSlots`
 
@@ -2913,7 +3120,7 @@ build and the other 211 put a model-less block over whichever stock item came fi
 
 Only hero items are listed. A set's loading screen, cursor, HUD, ward, announcer or taunt
 has a tab of its own or is not the app's to set, and nobody puts one on with a set. A hero
-item the builder leaves alone (an arcana, a persona) is listed as not fitting, with why: it
+item the builder leaves alone (a persona) is listed as not fitting, with why: it
 is part of what the set looks like. A set with nothing to put on is left out, and so is a store
 bundle of several sets ("Bounty Hunter's Big Bundle": 22 items, 7 slots): more of its pieces
 want a taken slot than fit, and the first of each would dress the hero in a mix of sets that
@@ -2940,6 +3147,46 @@ export function itemHeroes(text: string, item: { start: number }): string[]
 
 The heroes an item block says it is used by, as npc_dota_hero_* ids.
 
+## src/item-builder-styles.ts
+
+An item's styles in the item builder: which ones it has, and its visuals with one of them made
+its only one.
+
+A worn item is in a style the player chose in the game, and its visuals carry every style at
+once: an entry marked "style" "1" applies in the second one only, and the style's own block says
+which material the model takes ("skin") and sometimes another model. A stock item is in its first
+style and nobody can choose another, so a pick in style N is written as an item whose only style
+is N's, under the number 0: its entries marked N relabelled 0, every other style's taken out.
+The game then shows the item in it, and the files the build copies (src/item-builder-assets.ts)
+are that style's. The first style is the item as the builder always wrote it.
+
+### `styleTokens`
+
+```ts
+export function styleTokens(visuals: string | null): string[]
+```
+
+The name token of each of an item's styles, in their order ("#DOTA_Style_..."); [] for an item with one look.
+
+### `styleOf`
+
+```ts
+export const styleOf = (key: string): number => Number(/(?:^|,)style-(\d+)(?:,|$)/.exec(key)?.[1] || 0)
+```
+
+A pick's style out of its options' key (src/item-builder.ts effectKey): "style-2" is 2, none is 0.
+
+### `withStyle`
+
+```ts
+export function withStyle(visuals: string, style: number): { visuals: string; model: string | null; applied: boolean }
+```
+
+The visuals with style `style` made the item's only one, and the model that style puts on the
+item instead of its own (null: its own). Style 0, or a style the item has not got, leaves the
+visuals as they are (`applied` false): the builder strips the styles, which leaves the item in
+its first.
+
 ## src/item-builder.ts
 
 The item builder: a hero's stock item built from one of its wearables, with an effect on top.
@@ -2948,7 +3195,8 @@ For each hero and slot the free cosmetics offer that hero's wearables. Picking o
 block in items_game under the stock item's id, name and prefab=default_item, drops the styles
 and unlocks a free base item cannot use, adds the chosen particle effect to its visuals, and
 lists the model and particles to copy out of the game's pak01 under the stock paths, so the
-game draws the wearable where the stock item was. src/schema-service.ts applies it along with
+game draws the wearable where the stock item was. An arcana that swaps the whole hero brings its
+hero model too, under the plain hero's. src/schema-service.ts applies it along with
 the rest of the free cosmetics; src/schema.ts reads and merges the table.
 
 What the builder offers (slots, sets, effects) is src/item-builder-slots.ts, re-exported here;
@@ -2966,6 +3214,8 @@ Hands on from [`src/item-builder-slots.ts`](#srcitem-builder-slotsts): `itemSlot
 
 Hands on from [`src/item-builder-effects.ts`](#srcitem-builder-effectsts): `itemEffects`.
 
+Hands on from [`src/item-builder-assets.ts`](#srcitem-builder-assetsts): `gameAssetEntries`.
+
 ### `effectKey`
 
 ```ts
@@ -2976,6 +3226,11 @@ The effects of one pick as one string: ids in the order ITEM_EFFECTS lists them,
 comma separated, '' for none. A pick carries several (the window says "you can pick several"),
 and this is how a record stores them and how two picks are told apart, so "fire,snow" and
 "snow,fire" are the same pick.
+
+A style other than the item's first goes last, as "style-2" (src/item-builder-styles.ts). It
+rides in the same string so that a record, a preset and a shared link carry it as they carry the
+effects, with nothing new to keep in step; the first style is no token at all, which keeps every
+pick made before styles could be chosen the same pick.
 
 ### `defaultItemForWearable`
 
@@ -2988,24 +3243,123 @@ The stock default_item that matches a wearable by slot and by the hero(es) that 
 ### `itemEffectPatch`
 
 ```ts
-export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined): { id: string; block: string; assetCopies: AssetCopy[] }
+export function itemEffectPatch(baseText: string, itemId: string | number, effectIds: string | string[] | null | undefined): { id: string; block: string } & ItemAssets
 ```
 
 Turn one paid wearable into the hero's stock item for that slot.
 
 The block stays the donor item almost verbatim: only the header is rewritten to the matching
 default_item (id + name + prefab), styles/unlocks that cannot be used on a free base item are
-dropped, and the chosen effect is inserted into visuals. The donor model/particles stay named
-as the paid item in items_game, while assetCopies still describe the stock-path overrides the
-built VPK should carry.
+dropped (the chosen style, if not the first, stays as the only one: src/item-builder-styles.ts),
+and the chosen effect is inserted into visuals. The donor model/particles stay named as the paid
+item in items_game, while assetCopies still describe the stock-path overrides the built VPK
+should carry, and sounds and voices the soundevents it rewrites (src/item-sounds.ts).
 
-### `gameAssetEntries`
+## src/item-portraits.ts
+
+A hero's HUD portrait and minimap icon as an item builder pick makes them, written once for the
+whole build: two picks want the same two files, and the build keeps the first file of a path it is
+given, so the second pick's change would have been lost.
+- the portrait: the HUD draws the hero's model with the camera and lights scripts/npc/portraits.txt
+  gives its path, so an arcana's model under the plain path is framed and lit for the plain model.
+  Its own settings are written under the plain path (Drow's arcana has a camera of its own);
+- the minimap icon: drawn out of a sprite sheet that scripts/mod_textures.txt cuts up by name, so
+  the plain icon's sprite is cut where the item's is.
+Both files are written whole, as the game's with those entries changed, and only when something
+changed. The approach is BetterSource2Viewer's character export (ExportPortraits,
+CharacterIcons.ReplaceSprites; MIT). The pictures themselves are plain copies (item-builder-assets.ts).
+
+### `withPortraits`
 
 ```ts
-export function gameAssetEntries(gamePath: string, assetCopies: AssetCopy[] | null | undefined): VpkEntry[]
+export function withPortraits(text: string, swaps: { from: string; to: string }[]): string
 ```
 
-Read compiled asset bytes out of pak01 and stage them under the renamed path in our VPK.
+The portrait settings with each arcana's block written under the model it stands in for.
+
+### `withSprites`
+
+```ts
+export function withSprites(text: string, swaps: SpriteSwap[]): string
+```
+
+The sprite definitions with each swapped sprite cut out where its replacement is (a definition holds values only).
+
+### `portraitEntries`
+
+```ts
+export function portraitEntries(gamePath: string, portraits: PortraitSwap[], sprites: SpriteSwap[], log: (msg: string) => void = () => {}): VpkEntry[]
+```
+
+The portrait settings and sprite sheet of every pick, to go into the build ahead of the picks' own
+files. A hero whose own model the game does not name is left out and said in `log`.
+
+## src/item-sounds.ts
+
+An item's sounds and voice, as a mod gives them to a hero who does not own the item.
+
+The item builder's patch tells the game the stock item is the paid one, and the game draws it so.
+It does not make the game sound like it. Which sound plays is the server's choice, made from
+what the server knows the player owns: Bracers of the Cavern Luminar switch Hero_EarthShaker.Totem
+to Hero_EarthShaker.Totem.Immortal, and Planetfall sets the response criterion "eartharc_cosmos"
+that Earthshaker's response rules ask for before they speak an arcana line. A player who does not
+own them hears the plain totem and the plain voice, offline as online.
+
+The client only gets the name of the event to play, and plays what its own soundevents files say
+that event is. So the mod rewrites those files: the plain event becomes a copy of the item's.
+- a sound swap (`sound` in the item's visuals) is one event copied over another;
+- a voice (`response_criteria`) is every plain line of the hero's response rules made a copy of
+  an arcana line said in the same situation: the rule asking for the item's criterion whose other
+  requirements are the plain rule's, or failing that the one of the same concept that asks for
+  the fewest more. Lines the item has no situation for keep the plain voice.
+Two picks for one hero rewrite the same file, so every pick's changes go into one copy of it.
+
+### `SoundSwap`
+
+```ts
+export interface SoundSwap { sound: string; as: string }
+```
+
+An event to play as another: the one the server names, and the one the player hears.
+
+### `VoiceCue`
+
+```ts
+export interface VoiceCue { hero: string; key: string; value: string }
+```
+
+A response criterion an item sets for a hero ("customresponse" = "eartharc_cosmos").
+
+### `detached`
+
+```ts
+export function detached(kv: Kv3Block, n: Kv3Node): Kv3Node
+```
+
+A node out of one block, to put into another: a number read from a block points into that
+block's buffers, so it takes its bytes along (src/kv3-write.ts writes `raw` when it has it).
+
+### `voiceSwaps`
+
+```ts
+export function voiceSwaps(rules: Kv3Node, cue: Pick<VoiceCue, 'key' | 'value'>): SoundSwap[]
+```
+
+The plain lines of a hero, each as the item's line for the same situation (see the top of the
+file). A plain line already given one keeps it: a line can be in several rules.
+
+### `soundEntries`
+
+```ts
+export function soundEntries(gamePath: string, swaps: SoundSwap[], cues: VoiceCue[]): VpkEntry[]
+```
+
+The soundevents files that make these swaps and voices, each rewritten once with all of them.
+An event the game no longer has is passed over: items_game names a few dozen of those.
+
+```
+@param gamePath  the game folder (…/dota 2 beta/game)
+```
 
 ## src/item-visuals.ts
 
@@ -5963,6 +6317,17 @@ The rules it enforces:
 Hands on from [`src/schema-harvest.ts`](#srcschema-harvestts): `SchemaInstaller`.
 
 Hands on from [`src/schema-cosmetics.ts`](#srcschema-cosmeticsts): `CosmeticSlot`.
+
+### `builderStamp`
+
+```ts
+export function builderStamp(dir = import.meta.dirname): string | null
+```
+
+The app's own code, as a fingerprint of src/: a build the item builder made is only as right as the
+code that made it. A fix to how a pick is built never reached the picks already built, which kept
+the old files until each was taken off and picked again. Read once per run (~150 small files,
+inside app.asar when packaged); null where it cannot be read, which rebuilds nothing.
 
 ### `SchemaState`
 
