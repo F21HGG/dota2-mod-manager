@@ -18,6 +18,8 @@
  * channel that no longer exists, and when a check accepts what it is there to refuse.
  */
 
+import { validateDownloadProxy } from './download-proxy.ts';
+
 /** Why a value does not fit, or null when it does. */
 export type Check = (v: unknown) => string | null;
 
@@ -86,7 +88,16 @@ export const WINDOW_SETTINGS: Record<string, Check> = {
   showAdult: bool,
   theme: str(40, 1),
   toolsPromptSeen: bool,
+  downloadProxy: (v) => {
+    const result = validateDownloadProxy(v);
+    return result.ok ? null : result.error;
+  },
   uiLang: (v) => (typeof v === 'string' && /^[a-z]{2}(-[A-Za-z]{2})?$/.test(v) ? null : fail('a language code')),
+};
+
+const downloadProxy: Check = (v) => {
+  const result = validateDownloadProxy(v);
+  return result.ok ? null : result.error;
 };
 
 // the value's check depends on the key, so checkArgs runs it once the key is known to be one
@@ -105,7 +116,7 @@ export const CHANNEL_ARGS: Record<string, Check[]> = {
   'game:launch': [],
   'ui:setZoom': [num(0.25, 5)],
   // settings and the account (src/ipc-settings.ts)
-  'settings:get': [], 'settings:set': settingsSet, 'settings:detectDota': [], 'settings:browseDota': [],
+  'settings:get': [], 'settings:set': settingsSet, 'settings:testProxy': [downloadProxy], 'settings:detectDota': [], 'settings:browseDota': [],
   'settings:moveLangFiles': [optional(str(64))],
   'presence:view': [str(64)],
   'account:signIn': [], 'account:signOut': [],
