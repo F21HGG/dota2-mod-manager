@@ -17,7 +17,7 @@ import { readKv3, readCell, numberOf, type Kv3Block, type Kv3Node } from '../src
 import { writeKv3 } from '../src/kv3-write.ts';
 import { dataBlock, references, resourceBlock, resourceBlocks, resourceId, withReferences } from '../src/resource.ts';
 import { recolorResource, type Rgb } from '../src/recolor.ts';
-import { asModel, buildArcana, withChildren } from '../src/arcana.ts';
+import { arcanaForms, asModel, buildArcana, withChildAt, withChildren } from '../src/arcana.ts';
 import { materialExpressions } from '../src/material.ts';
 import { buildVpk, entryAt, openVpkIndex } from '../src/vpk.ts';
 import { at, encodeKv3, host, model, particle, remap, resource, rerl, type V } from './helpers/kv3-build.ts';
@@ -119,6 +119,52 @@ test('a particle is given another child, copied from its first, and names it in 
   assert.equal(readCell(kv, (at(items[1], 'm_flDelay') as { cell: NonNullable<Parameters<typeof readCell>[1]> }).cell), 0.5);
   assert.deepEqual(references(next), ['particles/eye.vpcf', 'particles/body.vpcf']);
   assert.throws(() => withChildren(particle(encodeKv3({ obj: [['m_nCount', { int: 1 }]] })), [{ path: 'particles/body.vpcf' }]), /no children/);
+});
+
+/* Rictus Ripper's demon eye is created in the loadout only; in a match it goes on the particle the
+ * game creates for the demon, Terrorblade's metamorphosis, which binds its points to attachments
+ * but hands none to its children (2026-10-19). */
+test('a child hung at an attachment its host does not bind goes first, handed a new point of its own', () => {
+  const meta = resource([['RERL', rerl(['particles/ambient.vpcf'])], ['DATA', encodeKv3({ obj: [
+    ['m_Children', { arr: [{ obj: [['m_ChildRef', { ref: 'particles/ambient.vpcf' }]] }] }],
+    ['m_controlPointConfigurations', { arr: [{ obj: [['m_name', { str: 'preview' }], ['m_drivers', { arr: [
+      { obj: [['m_entityName', { str: 'self' }]] },
+      { obj: [['m_iControlPoint', { int: 1 }], ['m_iAttachType', { str: 'PATTACH_POINT_FOLLOW' }], ['m_attachmentName', { str: 'attach_hitloc' }], ['m_entityName', { str: 'self' }]] },
+    ] }]] }] }],
+  ] })]]);
+  const next = withChildAt(meta, 'particles/eye.vpcf', 'attach_eye');
+  const kv = readKv3(dataBlock(next).data);
+  const str = (n: Kv3Node) => (n as { value: string }).value;
+  const num = (n: Kv3Node) => numberOf(kv, n as Extract<Kv3Node, { kind: 'number' }>);
+  const children = (at(kv.root, 'm_Children') as Extract<Kv3Node, { kind: 'array' }>).items;
+  assert.deepEqual(children.map((c) => str(at(c, 'm_ChildRef'))), ['particles/eye.vpcf', 'particles/ambient.vpcf'], 'first: the hand-off counts from the first child');
+  assert.equal((at(children[0], 'm_ChildRef') as { flag?: number }).flag, 1, 'a resource it names');
+  const driver = at(kv.root, 'm_controlPointConfigurations', 0, 'm_drivers', 2);
+  assert.deepEqual([num(at(driver, 'm_iControlPoint')), str(at(driver, 'm_attachmentName'))], [2, 'attach_eye']);
+  const hand = at(kv.root, 'm_PreEmissionOperators', 0);
+  assert.deepEqual([str(at(hand, '_class')), num(at(hand, 'm_nNumControlPoints')), num(at(hand, 'm_nFirstSourcePoint'))],
+    ['C_OP_SetParentControlPointsToChildCP', 1, 2], 'only the new child is handed the point');
+  assert.deepEqual(references(next), ['particles/ambient.vpcf', 'particles/eye.vpcf']);
+  assert.throws(() => withChildAt(host(['particles/a.vpcf', 'particles/b.vpcf']), 'particles/eye.vpcf', 'attach_eye'), /already hands/, 'one that hands points is withChildren\'s');
+  assert.throws(() => withChildAt(host(), 'particles/eye.vpcf', 'attach_eye'), /binds no control point/, 'one point, bound to nothing it names: nothing to copy');
+});
+
+test("a form's particle a host cannot take leaves the host as it was, and says so", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'd2mm-arcana-forms-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const META = 'particles/units/heroes/hero_terrorblade/terrorblade_metamorphosis.vpcf_c';
+  const EYE = 'particles/econ/items/terrorblade/dreadhunt/dreadhunt_demon_ambient.vpcf_c';
+  const pak01 = path.join(dir, 'pak01_dir.vpk');
+  fs.writeFileSync(pak01, buildVpk([entryAt(EYE, particle(encodeKv3({ obj: [['m_ColorMin', { i32s: [255, 86, 86, 255] }]] })))]));
+  const unbound = host();
+  const files = new Map([[META, unbound]]);
+  const said: string[] = [];
+  arcanaForms(pak01, 'terrorblade-arcana', [0, 210, 200], ['31410'], files, (m) => said.push(m));
+  assert.equal(files.get(META), unbound, 'the metamorphosis as it was');
+  assert.equal(files.has(EYE), false, 'and no eye with nothing to hang it on');
+  assert.match(said[0] || '', /not hung on .*terrorblade_metamorphosis/);
+  arcanaForms(pak01, 'terrorblade-arcana', [0, 210, 200], [], files, (m) => said.push(m));
+  assert.equal(said.length, 1, 'the demon not picked: nothing tried');
 });
 
 test("a child hung on with an attachment gets a control point of its own there, not at its parent's first", () => {
