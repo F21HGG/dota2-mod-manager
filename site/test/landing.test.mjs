@@ -274,17 +274,38 @@ test('a question opens and closes', async () => {
   await context.close();
 });
 
-test('the eight mascots hide in the margins, and only where there are margins', async () => {
+/** The order the seven have to be found in (Hunt.astro HEROES, hunt-notes.ts LINES). */
+const ORDER = ['meepo', 'invoker', 'bh', 'ursa', 'storm', 'brew', 'fura'];
+async function findSeven(page) {
+  for (const id of ORDER) {
+    await page.locator(`.hunt-hero[data-hero="${id}"]`).click({ force: true });
+    await page.waitForTimeout(260);
+  }
+}
+
+test('seven mascots hide in the margins and Axe hangs in the middle, never over the page', async () => {
   const { context, page } = await open('desktop');
-  const spots = await page.locator('.hunt-hero').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()));
-  assert.equal(spots.length, 8);
+  const spots = await page.locator('.hunt-hero:not(.cocoon)').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()));
+  assert.equal(spots.length, 7);
   const vw = await page.evaluate(() => document.documentElement.clientWidth);
   const gutter = (vw - 1200) / 2;
   for (const r of spots) assert.ok(r.right <= gutter + 20 || r.left >= vw - gutter - 20, `a mascot sits over the column at x ${Math.round(r.left)}`);
+  const cocoon = await page.locator('.hunt-hero.cocoon').evaluate((c) => {
+    const r = c.getBoundingClientRect();
+    const hit = [...document.querySelectorAll('section > .wrap')].some((w) => {
+      const b = w.getBoundingClientRect();
+      return b.top < r.bottom && b.bottom > r.top;
+    });
+    // where it hangs, not where its sway has carried it this instant
+    return { mid: parseFloat(c.style.left) + c.offsetWidth / 2, hit, axe: c.dataset.hero };
+  });
+  assert.equal(cocoon.axe, 'axe');
+  assert.ok(Math.abs(cocoon.mid - vw / 2) < 4, `the cocoon hangs at x ${Math.round(cocoon.mid)}, not in the middle`);
+  assert.equal(cocoon.hit, false, 'the cocoon hangs over a section');
 
-  // finding one gives the page its colours and brings up the tally
+  // the first in order gives the page its colours and brings up the tally
   const before = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--primary'));
-  await page.locator('.hunt-hero').nth(1).click({ force: true });
+  await page.locator('.hunt-hero[data-hero="meepo"]').click({ force: true });
   await page.waitForTimeout(700);
   assert.equal(await page.locator('#hunt-score').isVisible(), true);
   const after = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--primary'));
@@ -298,13 +319,44 @@ test('the eight mascots hide in the margins, and only where there are margins', 
   }
 });
 
+test('out of turn, a hero screams and everyone found goes back; Axe only whispers until the seven are in', async () => {
+  const { context, page } = await open('desktop');
+  await page.locator('.hunt-hero.cocoon').click({ force: true });
+  await page.locator('.hunt-whisper').waitFor({ timeout: 2000 });
+  await page.locator('.hunt-hero[data-hero="meepo"]').click({ force: true });
+  await page.waitForTimeout(300);
+  await page.locator('.hunt-hero[data-hero="bh"]').click({ force: true });
+  await page.locator('.hunt-scream').waitFor({ timeout: 2000 });
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator('.hunt-scream').count(), 0, 'the scream stayed on screen');
+  assert.equal(await page.locator('.hunt-hero:not(.cocoon)').count(), 7, 'the one found before did not go back');
+  assert.equal(await page.locator('#hunt-score').isHidden(), true);
+  await context.close();
+});
+
+test('the order is written across the site while Halloween is in season, a line to a page', async () => {
+  for (const [path, lines] of [['/', ['I.', 'VIII.']], ['/catalog/', ['II.']], ['/changes/', ['V.']], ['/ru/docs/', ['IV.']]]) {
+    const { context, page } = await openPage(browser, server.url, 'desktop');
+    await page.addInitScript(() => localStorage.setItem('mm-look', 'halloween'));
+    await page.goto(`${server.url}${path}`, { waitUntil: 'load' });
+    const got = await page.locator('.hunt-note b').allTextContents();
+    assert.deepEqual(got, lines, path);
+    await context.close();
+  }
+  const { context, page } = await openPage(browser, server.url, 'desktop');
+  await page.addInitScript(() => localStorage.setItem('mm-look', 'rainbow'));
+  await page.goto(`${server.url}/`, { waitUntil: 'load' });
+  assert.equal(await page.locator('.hunt-note').count(), 0, 'the notes are out of season');
+  await context.close();
+});
+
 /** Chase the one that runs (src/scripts/chase.ts) the way a hand would, until it is caught. */
 async function runDown(page, limit = 200_000) {
   const t0 = Date.now();
   let lastClick = 0;
   while (Date.now() - t0 < limit) {
     const r = await page.evaluate(() => {
-      const e = document.querySelector('.chase-runner');
+      const e = document.querySelector('.chase-runner:not(.chase-decoy)');
       if (!e || document.querySelector('.chase.caught')) return null;
       const b = e.getBoundingClientRect();
       return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
@@ -324,25 +376,33 @@ async function runDown(page, limit = 200_000) {
 }
 
 /* The chase waits for an app release that takes its key (Landing.astro, data-last), and mm-chase
-   lets it run before then; the tests below that need it turn it on that way. */
+   lets it run before then; the tests below that need it turn it on that way. The pumpkin's worker
+   (tools/pumpkin-worker) is stood in for, and says what it was asked. */
+const KEY = 'K7QX-M2PA-9HRT-WZ4N';
 const chasing = async () => {
   const { context, page } = await openPage(browser, server.url, 'desktop');
+  const asked = [];
+  await context.route('https://pumpkin.dota2modmanager.com/**', async (route) => {
+    const url = new URL(route.request().url());
+    asked.push({ path: url.pathname, body: route.request().postData() });
+    const json = url.pathname === '/ticket' ? { ticket: 'the-ticket' } : { key: KEY };
+    await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(json) });
+  });
   await page.addInitScript(() => { localStorage.setItem('mm-chase', '1'); localStorage.setItem('mm-look', 'halloween'); });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${server.url}/`, { waitUntil: 'load' });
-  return { context, page };
+  return { context, page, asked };
 };
 
-test('until the build says the last one runs, the eighth is found like the other seven', async () => {
+test('until the build says Axe runs, he is found like the other seven', async () => {
   const { context, page } = await open('desktop');
   const runs = await page.evaluate(() => document.getElementById('hunt').dataset.last !== undefined);
-  for (let i = 0; i < 7; i++) {
-    await page.locator('.hunt-hero:not(.pop)').first().click({ force: true });
-    await page.waitForTimeout(260);
-  }
+  await findSeven(page);
+  await page.waitForTimeout(1200);
+  assert.equal(await page.locator('.hunt-hero.cocoon').count(), 0, 'the cocoon did not tear when the seven were in');
   assert.equal(await page.locator('.hunt-hero.runner').count(), runs ? 1 : 0);
   if (!runs) {
-    await page.locator('.hunt-hero:not(.pop)').first().click({ force: true });
+    await page.locator('.hunt-hero[data-hero="axe"]').click({ force: true });
     const done = page.locator('#hunt-done');
     await done.waitFor();
     assert.match(await done.textContent(), /8\/8/);
@@ -354,24 +414,23 @@ test('until the build says the last one runs, the eighth is found like the other
   await context.close();
 });
 
-test('the last of the eight runs, and only a long chase catches it: the site turns, and a key that fits the app', { timeout: 300_000 }, async () => {
-  const { context, page } = await chasing();
-  for (let i = 0; i < 7; i++) {
-    await page.locator('.hunt-hero:not(.pop):not(.runner)').first().click({ force: true });
-    await page.waitForTimeout(260);
-  }
+test('Axe runs, and only a long chase catches him: the site turns, and a key of ones own', { timeout: 300_000 }, async () => {
+  const { context, page, asked } = await chasing();
+  await findSeven(page);
+  await page.waitForTimeout(1200);
   const runner = page.locator('.hunt-hero.runner');
-  assert.equal(await runner.count(), 1, 'the eighth is not the one that runs');
+  assert.equal(await runner.count(), 1, 'Axe is not the one that runs');
 
-  // in the margin it slips away along the column a few times before a click lands
+  // loose, he slips away from the hand a few times before a click lands
   await runner.scrollIntoViewIfNeeded();
   const at = await runner.boundingBox();
   await page.mouse.move(at.x + 27, at.y - 200);
   await page.mouse.move(at.x + 27, at.y + 27, { steps: 6 });
   await page.waitForTimeout(450);
   const moved = await runner.boundingBox();
-  assert.ok(Math.abs(moved.y - at.y) > 100, `it waited to be clicked: ${Math.round(at.y)} -> ${Math.round(moved.y)}`);
-  for (let i = 0; i < 6 && !(await page.locator('.chase').count()); i++) {
+  assert.ok(Math.hypot(moved.x - at.x, moved.y - at.y) > 100, `he waited to be clicked: ${Math.round(at.x)},${Math.round(at.y)} -> ${Math.round(moved.x)},${Math.round(moved.y)}`);
+  for (let i = 0; i < 8 && !(await page.locator('.chase').count()); i++) {
+    await runner.scrollIntoViewIfNeeded();
     const b = await runner.boundingBox();
     await page.mouse.click(b.x + 27, b.y + 27);
     await page.waitForTimeout(350);
@@ -384,27 +443,29 @@ test('the last of the eight runs, and only a long chase catches it: the site tur
   const title = await page.locator('.chase-title .line').evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().toJSON()));
   for (const l of title) assert.ok(l.left >= 0 && l.right <= 1440, `the line runs ${Math.round(l.left)}..${Math.round(l.right)}`);
 
-  // Escape gives up: the night lifts and it is back in its margin, ready to go again
+  // Escape gives up: the night lifts and he is back in the middle, ready to go again
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(1900);
   assert.equal(await night.count(), 0, 'Escape left the chase on screen');
-  assert.equal(await runner.count(), 1, 'it did not go back to its margin');
+  assert.equal(await runner.count(), 1, 'he did not go back to the middle');
   await runner.scrollIntoViewIfNeeded();
   const b = await runner.boundingBox();
   await page.mouse.click(b.x + 27, b.y + 27);
   await night.waitFor();
   await page.waitForTimeout(800);
 
-  // and it is not caught on the first try: a click on a fresh one only makes it dodge
+  // and he is not caught on the first try: a click on a fresh one only makes him dodge
   const took = await runDown(page);
-  assert.ok(took !== null, 'nobody could catch it in two hundred seconds');
+  assert.ok(took !== null, 'nobody could catch him in two hundred seconds');
   assert.ok(took > 8000, `caught after ${took} ms, which is no chase at all`);
 
   const prize = page.locator('.hunt-key');
   await prize.waitFor({ timeout: 4000 });
-  const key = (await prize.locator('.hunt-key-code').textContent()).trim();
-  const { opens } = await import('../../renderer/ui/secret-lock.ts');
-  assert.equal(await opens(key), true, 'the key the site gives does not open the app');
+  await page.locator('.hunt-key-code:not(.waiting)').waitFor({ timeout: 4000 });
+  assert.equal((await prize.locator('.hunt-key-code').textContent()).trim(), KEY);
+  // a ticket at the start of the chase, spent on the key once he was caught
+  assert.ok(asked.some((a) => a.path === '/ticket'), 'no ticket was asked for');
+  assert.ok(asked.some((a) => a.path === '/claim' && JSON.parse(a.body).ticket === 'the-ticket'), 'the key was not claimed with the ticket');
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('halloween')), true, 'the page did not put on the look of the day');
   // the footer offers the key again, for whoever closed it before writing it down
   await prize.locator('.hunt-close').click();
@@ -414,19 +475,18 @@ test('the last of the eight runs, and only a long chase catches it: the site tur
   await again.scrollIntoViewIfNeeded();
   assert.notEqual((await page.locator('#rainbowSwitch').textContent()).trim(), '', 'the rainbow switch has no words');
   await again.click();
-  assert.equal((await page.locator('.hunt-key-code').textContent()).trim(), key);
+  assert.equal((await page.locator('.hunt-key-code').textContent()).trim(), KEY);
   await context.close();
 });
 
-test('somebody who found all eight before the last one learned to run gets one hero back, and a catcher gets none', async () => {
-  for (const [flags, heroes] of [[{ 'mm-chase': '1', 'mm-rainbow': '1' }, 1], [{ 'mm-chase': '1', 'mm-rainbow': '1', 'mm-caught': '1' }, 0]]) {
+test('last year\'s rainbow does not skip this year\'s hunt, and a catcher gets the key back instead', async () => {
+  for (const [flags, heroes] of [[{ 'mm-chase': '1', 'mm-rainbow': '1', 'mm-caught': '1' }, 8], [{ 'mm-chase': '1', 'mm-rainbow': '1', 'mm-bled': '1', 'mm-key': KEY }, 0]]) {
     const { context, page } = await openPage(browser, server.url, 'desktop');
     await page.addInitScript((f) => { for (const [k, v] of Object.entries(f)) localStorage.setItem(k, v); }, flags);
     await page.goto(`${server.url}/`, { waitUntil: 'load' });
     await page.waitForTimeout(300);
     assert.equal(await page.locator('.hunt-hero').count(), heroes, JSON.stringify(flags));
-    if (heroes) assert.equal(await page.locator('.hunt-hero.runner').count(), 1, 'the one back is not the one that runs');
-    else assert.equal(await page.locator('#keyAgain').count(), 1, 'a catcher is not offered the key again');
+    if (!heroes) assert.equal(await page.locator('#keyAgain').count(), 1, 'a catcher is not offered the key again');
     await context.close();
   }
 });
@@ -469,19 +529,26 @@ test('Halloween dresses the page: webs, blood, spiders that come down with the s
   assert.equal(await count('.hw-hanger'), 2, 'two spiders on threads');
   assert.equal(await count('.foot .hw-garland span'), 8, 'lanterns over the footer');
 
-  // the spiders come down as the page goes, and their webs grow out of the distance scrolled
-  const read = () => page.evaluate(() => ({
-    y: [...document.querySelectorAll('.hw-hanger')].map((h) => h.getBoundingClientRect().top),
-    spun: [...document.querySelectorAll('.hw-woven line, .hw-woven path')].reduce((a, t) => a + (1 - parseFloat(getComputedStyle(t).strokeDashoffset)), 0),
-  }));
+  // the spiders come down as the page goes, each to its own depth: the first no further than the
+  // middle of the screen, the second all the way to the bottom of it once the page is read through
+  const read = () => page.evaluate(() => [...document.querySelectorAll('.hw-hanger')].map((h) => h.getBoundingClientRect().bottom));
   const before = await read();
   for (const y of [800, 1600, 2400, 3200]) { await page.evaluate((v) => scrollTo(0, v), y); await page.waitForTimeout(120); }
   await page.waitForTimeout(300);
   const after = await read();
-  assert.ok(after.y.every((v, i) => v > before.y[i] + 60), `the spiders did not come down: ${before.y} -> ${after.y}`);
-  assert.ok(after.spun > before.spun + 1, `no web was spun: ${before.spun} -> ${after.spun}`);
+  assert.ok(after.every((v, i) => v > before[i] + 60), `the spiders did not come down: ${before} -> ${after}`);
+  await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(400);
+  const bottom = await read();
+  assert.ok(bottom[0] < 900 * 0.6, `the first spider went past the middle: ${bottom[0]}`);
+  assert.ok(bottom[1] > 900 * 0.8, `the second spider stopped short of the bottom: ${bottom[1]}`);
+  // the webs are left hanging about the page, and none of them moves with the spiders
+  const webs = await page.evaluate(() => [...document.querySelectorAll('.hw-strung')].map((w) => Math.round(parseFloat(w.style.top))));
+  assert.ok(webs.length >= 3 && new Set(webs).size === webs.length, `webs not scattered: ${webs}`);
+  assert.equal(await count('.hw-woven'), 0, 'a web still follows a spider');
+  assert.ok((await count('.hw-garland.strung')) >= 1, 'no lanterns strung between the sections');
   // all of it lets the pointer through
-  const blocking = await page.evaluate(() => [...document.querySelectorAll('.hw-web, .hw-blood, .hw-hanger, .hw-thread, .hw-woven, .hw-garland')].filter((e) => getComputedStyle(e).pointerEvents !== 'none').length);
+  const blocking = await page.evaluate(() => [...document.querySelectorAll('.hw-web, .hw-blood, .hw-hanger, .hw-thread, .hw-strung, .hw-garland')].filter((e) => getComputedStyle(e).pointerEvents !== 'none').length);
   assert.equal(blocking, 0, 'part of the dressing catches clicks');
 
   // the footer speaks of Halloween, and turning it off takes the dressing down
@@ -503,6 +570,69 @@ test('Halloween dresses the page: webs, blood, spiders that come down with the s
   assert.deepEqual(moving.filter((c) => /hw/.test(String(c))), [], 'the dressing loops on a phone');
   assert.equal(await phone.page.locator('.hw-runner').count(), 0);
   await phone.context.close();
+});
+
+test('a new round of the night forgets what the last one left, once, before the first paint', async () => {
+  const { context, page } = await openPage(browser, server.url, 'desktop');
+  // somebody from the round before: rewarded, Axe caught, a key, the mask, and no mark of this round
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('seeded')) return;
+    sessionStorage.setItem('seeded', '1');
+    localStorage.removeItem('mm-night');
+    for (const k of ['mm-rainbow', 'mm-bled', 'mm-key', 'mm-heart']) localStorage.setItem(k, '1');
+    localStorage.setItem('mm-sound', '1');
+  });
+  await page.goto(`${server.url}/`, { waitUntil: 'load' });
+  const left = await page.evaluate(() => ({
+    kept: ['mm-rainbow', 'mm-bled', 'mm-key', 'mm-heart'].filter((k) => localStorage.getItem(k) !== null),
+    sound: localStorage.getItem('mm-sound'),
+    worn: document.documentElement.classList.contains('rainbow') || document.documentElement.classList.contains('halloween'),
+  }));
+  assert.deepEqual(left.kept, []);
+  assert.equal(left.sound, '1', 'a choice that is not part of the night stays');
+  assert.equal(left.worn, false, 'the page wore the forgotten reward');
+  // earned again in this round, it stays
+  await page.evaluate(() => localStorage.setItem('mm-rainbow', '1'));
+  await page.reload({ waitUntil: 'load' });
+  assert.equal(await page.evaluate(() => localStorage.getItem('mm-rainbow')), '1');
+  await context.close();
+});
+
+test('in season the page itself turns: hands on the cards, eyes that whisper the way on, and a mask on the lost page', { timeout: 60_000 }, async () => {
+  // for everybody while Halloween is on, earned or not: no mm-rainbow here
+  const { context, page } = await openPage(browser, server.url, 'desktop');
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto(`${server.url}/`, { waitUntil: 'load' });
+  await page.evaluate(() => localStorage.setItem('mm-look', 'halloween'));
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(300);
+  assert.ok((await page.locator('.dr-grip').count()) >= 1, 'no hand holds on to a card');
+  assert.ok((await page.locator('.dr-word').count()) >= 1, 'no word is possessed');
+  // the first thing the eyes say is the way into the app's half of the hunt
+  const eyes = page.locator('.dr-eyes').first();
+  await eyes.scrollIntoViewIfNeeded();
+  await eyes.click();
+  assert.match(await page.locator('.dr-whisper').textContent(), /twenty/);
+  await context.close();
+
+  // the lost page: his mask on a thread; pressed, a phone rings, and picked up it shows the mod
+  const lost = await openPage(browser, server.url, 'desktop');
+  await lost.page.goto(`${server.url}/404.html`, { waitUntil: 'load' });
+  await lost.page.evaluate(() => localStorage.setItem('mm-look', 'halloween'));
+  await lost.page.reload({ waitUntil: 'load' });
+  await lost.page.locator('.hs-mask').click({ force: true }); // it swings on its thread and is never still
+  await lost.page.locator('.hs-pick').click();
+  await lost.page.locator('.hs.on .hs-title').waitFor({ timeout: 20_000 });
+  assert.match(await lost.page.locator('.hs-card').textContent(), /Necrophos[\s\S]*not in the catalog/);
+  assert.equal(await lost.page.evaluate(() => localStorage.getItem('mm-heart')), '1');
+  // whoever found it keeps the mask, so the footer has it
+  await lost.page.locator('.hs-close').click();
+  assert.equal(await lost.page.locator('.foot-legal .dr-trophy').count(), 1, 'the mask is not in the footer');
+  // and pressed there it shows the mod again, without the call
+  await lost.page.waitForTimeout(500);
+  await lost.page.locator('.foot-legal .dr-trophy').click();
+  await lost.page.locator('.hs.on .hs-title').waitFor({ timeout: 5_000 });
+  await lost.context.close();
 });
 
 test('the note says it once and leaves by itself', async () => {

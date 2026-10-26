@@ -112,6 +112,7 @@ the code, not in this page.
 | [`src/preset-plan.ts`](#srcpreset-plants) | How a preset travels to somebody else (src/presets-service.ts applies, packs and receives |
 | [`src/preset-share.ts`](#srcpreset-sharets) | Shareable preset files (.d2mm) — a zip holding preset.json plus the VPK of every mod |
 | [`src/presets-service.ts`](#srcpresets-servicets) | Presets, and the two ways one travels to somebody else. |
+| [`src/pumpkin.ts`](#srcpumpkints) | The pumpkin's side of the key (renderer/ui/pumpkin.ts asks, tools/pumpkin-worker answers). |
 | [`src/recolor.ts`](#srcrecolorts) | An item's effects in a colour of the user's choosing, built from the game's own files. |
 | [`src/release-notes.ts`](#srcrelease-notests) | The changelog section for one version, for the "What's new" window. |
 | [`src/remote-config-format.ts`](#srcremote-config-formatts) | The remote config's format (src/remote-config.ts fetches it and answers from it): what the |
@@ -127,6 +128,7 @@ the code, not in this page.
 | [`src/schema-merge.ts`](#srcschema-mergets) | Mod deltas and the merge (src/schema.ts): which item blocks a mod changed, lifted out of the |
 | [`src/schema-service.ts`](#srcschema-servicets) | Orchestration around the item schema: what goes into it, when it is rebuilt, and how a |
 | [`src/schema.ts`](#srcschemats) | Item-schema engine: the game's own scripts/items/items_game.txt is the only place |
+| [`src/scream-guard.ts`](#srcscream-guardts) | The pumpkin's mod belongs to whoever opened the pumpkin (src/pumpkin.ts). |
 | [`src/services.ts`](#srcservicests) | What the app is built from: every long-lived service, created once in the order they depend on |
 | [`src/settings.ts`](#srcsettingsts) | Simple JSON settings store in userData |
 | [`src/slot-zones.ts`](#srcslot-zonests) | The load order in two parts. |
@@ -4961,7 +4963,7 @@ follows every change.
 ### `createModsListing`
 
 ```ts
-export function createModsListing({ installer, library, fingerprints, schemaService, updateImpact = null, terrainAges, notice, diag, refreshPresence, verifyStuck }: ListingDeps)
+export function createModsListing({ installer, library, fingerprints, schemaService, updateImpact = null, terrainAges, notice, diag, refreshPresence, verifyStuck, guard }: ListingDeps)
 ```
 
 The mods:list answer, built over the services src/ipc-mods.ts hands it.
@@ -6157,6 +6159,83 @@ Everything about presets that needs the running app's services.
 @param deps.schemaService  puts a preset's looks on, and rebuilds the item table when a preset changes it
 @param deps.deployAndApply  rebuilds one pack's VPK
 ```
+
+## src/pumpkin.ts
+
+The pumpkin's side of the key (renderer/ui/pumpkin.ts asks, tools/pumpkin-worker answers).
+
+Each key the site hands out opens one pumpkin. This install has a name of its own for that, a
+random one made the first time it is needed and never sent anywhere else, and the worker ties
+a key to the first name that brings it. A key posted in a channel is spent by whoever is first;
+everybody after gets "used".
+
+What the key opens: the bloody theme (settings `blood`) and a mod nobody else has yet, which is
+downloaded from the worker, the one place that knows whether this install may have it, and
+then taken in the way any .vpk somebody drops on the window is (src/import.ts). The key is
+kept, so the mod can be fetched again after it was removed.
+
+Forgiving about typing in the same way the old lock was: case, spaces and dashes do not count,
+and a key typed on a Russian layout or with Cyrillic look-alikes is read back as the Latin it
+meant.
+
+### `PUMPKIN_HOST`
+
+```ts
+export const PUMPKIN_HOST = 'https://pumpkin.dota2modmanager.com'
+```
+
+The worker that keeps the keys and the prize (tools/pumpkin-worker).
+
+### `PRIZE_NAME`
+
+```ts
+export const PRIZE_NAME = 'Necrophos - Scream'
+```
+
+What the mod is called in the library.
+
+### `readings`
+
+```ts
+export function readings(typed: string): string[]
+```
+
+Every reading of what was typed that could be a key: 16 Latin letters and digits.
+
+### `NIGHT_ROUND`
+
+```ts
+export const NIGHT_ROUND = 1
+```
+
+Which night this install has been through: a new number makes everybody walk it again.
+
+### `beginNightAgain`
+
+```ts
+export function beginNightAgain(settings: Deps['settings']): boolean
+```
+
+The night from the beginning, once per round, for every install: the pumpkin goes back in, the
+two themes it opened close, and a window wearing one of them goes back to Ursa. The key spent
+and the mod it brought stay: that mod was earned (src/scream-guard.ts), only the way to the
+theme has to be found again. True when this start was the one that reset it.
+
+### `RedeemAnswer`
+
+```ts
+export type RedeemAnswer =
+```
+
+What the window is told after a key: the night opened (and whether the mod came with it), or why not.
+
+### `createPumpkin`
+
+```ts
+export function createPumpkin({ settings, importVpkPaths, library, fetch: get = fetch, host = PUMPKIN_HOST, log = () => {} }: Deps)
+```
+
+The pumpkin's side in the main process: spend a key, fetch the prize again, say whether it is here.
 
 ## src/recolor.ts
 
@@ -7424,6 +7503,50 @@ export function isDeployed(gamePath: string, folder: string): boolean
 ```
 
 Whether a built schema is in the mod folder.
+
+## src/scream-guard.ts
+
+The pumpkin's mod belongs to whoever opened the pumpkin (src/pumpkin.ts).
+
+It is recognised by what is inside its pak, not by its name or its file: its own folders, which
+no other mod has. An install that never spent a key of its own and has it anyway was handed a
+copy, so the mod is switched off, marked, and stays off (src/ipc-library.ts refuses to switch
+it on); My mods says why on its row. Spending a key later takes the mark off.
+
+Every mod is looked into once (`scream` on its record), from mods:list (src/mods-listing.ts),
+which follows every change, so a copy dropped on the window is caught on the next listing.
+
+### `SCREAM_MARKS`
+
+```ts
+export const SCREAM_MARKS = ['materials/scream_fx/', 'materials/models/heroes/necrolyte/scream/']
+```
+
+Folders only the pumpkin's mod has.
+
+### `isScream`
+
+```ts
+export function isScream(paths: string[]): boolean
+```
+
+Whether a pak's paths are the pumpkin's mod.
+
+### `createScreamGuard`
+
+```ts
+export function createScreamGuard({ library, settings, pathsOf, switchOff, log = () => {} }: Deps)
+```
+
+Look into the mods not looked into yet, and switch off a copy this install did not earn. The names caught.
+
+### `screamGuardFor`
+
+```ts
+export function screamGuardFor({ installer, library, settings, afterOff = () => {}, log }: AppDeps)
+```
+
+The guard over the installer and the library (src/ipc-mods.ts): paks read from the game folder.
 
 ## src/services.ts
 

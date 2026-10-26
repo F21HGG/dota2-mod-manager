@@ -1429,9 +1429,6 @@ html.halloween .hunt-key-code { background-image: linear-gradient(90deg, #ffb35c
 .hw-spider .leg { fill: none; stroke: #120c10; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .hw-thread { position: fixed; left: 0; top: 0; z-index: 38; width: 1px; height: 1px; background: rgb(230 226 240 / 0.45); transform-origin: 0 0; pointer-events: none; }
 .hw-hanger { position: fixed; left: 0; top: 0; z-index: 38; width: 42px; height: 42px; transform-origin: 50% 0; pointer-events: none; }
-.hw-woven { position: fixed; left: 0; top: 0; z-index: 37; pointer-events: none; opacity: 0.6; }
-.hw-woven[hidden] { display: none; }
-.hw-woven :is(line, path) { fill: none; stroke: #e8e2f0; stroke-width: 0.8; stroke-dasharray: 1; stroke-dashoffset: 1; }
 .hw-runner { position: fixed; left: 0; top: 0; z-index: 45; width: 44px; height: 44px; pointer-events: none; }
 .hw-runner .legs.a .leg:not(.odd), .hw-runner .legs.b .leg.odd { animation: scuttle 120ms linear infinite alternate; }
 .hw-runner .legs.a .leg.odd, .hw-runner .legs.b .leg:not(.odd) { animation: scuttle 120ms linear -60ms infinite alternate; }
@@ -1446,6 +1443,9 @@ html.halloween .hunt-key-code { background-image: linear-gradient(90deg, #ffb35c
   transform-origin: 50% 0; animation: sway 3.6s ease-in-out calc(var(--i) * -0.45s) infinite alternate;
 }
 .hw-garland span:nth-of-type(even) { top: 6px; }
+/* the same, strung across the page over a section's top edge, in its padding */
+.hw-garland.strung { z-index: 2; height: 60px; }
+.hw-garland.strung span { width: 24px; height: 24px; }
 @keyframes sway { from { rotate: -6deg; } to { rotate: 6deg; } }
 .hw-lantern { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0 8px rgb(255 140 40 / 0.55)); }
 .hw-lantern .pk-stem { fill: #6b8f3e; }
@@ -1456,6 +1456,158 @@ html.halloween .hunt-key-code { background-image: linear-gradient(90deg, #ffb35c
   0%, 100% { opacity: 1; } 7% { opacity: 0.68; } 10% { opacity: 1; } 43% { opacity: 0.85; }
   47% { opacity: 1; } 66% { opacity: 0.6; } 70% { opacity: 0.95; }
 }
+
+/* blood splashed over the margins, behind everything in the column */
+.hw-splat { position: absolute; z-index: -1; pointer-events: none; opacity: 0.75; }
+.hw-splat svg { display: block; overflow: visible; }
+.hw-splat :is(path, circle) { fill: #6a0812; }
+.hw-splat path { filter: drop-shadow(0 0 1px #2a0005); }
+.hw-splat.faint { opacity: 0.5; }
+/* webs strung in the gutters further down the page, on a thread from nowhere */
+.hw-strung { position: absolute; z-index: -1; pointer-events: none; opacity: 0.4; }
+.hw-strung.l { left: var(--gut); translate: -50% 0; }
+.hw-strung.r { right: var(--gut); translate: 50% 0; }
+.hw-strung :is(line, path) { fill: none; stroke: #e8e2f0; stroke-width: 0.7; }
+.hw-strung::before { content: ''; position: absolute; left: 50%; bottom: 50%; width: 1px; height: 60vh; background: linear-gradient(transparent, rgb(230 226 240 / 0.35)); }
+/* the pool on top of the footer: what dripped from the header all the way down ends here */
+.foot { position: relative; }
+.hw-pool { position: absolute; left: 0; right: 0; top: -1px; height: 34px; pointer-events: none; z-index: 1; }
+.hw-pool svg { display: block; width: 100%; height: 100%; }
+.hw-pool path { fill: #5c0009; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.6)); }
+.hw-pool::after {
+  content: ''; position: absolute; left: 12%; right: 30%; top: 3px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgb(255 140 150 / 0.4), transparent);
+}
+/* a spider can be caught (scripts/halloween.ts) */
+.hw-runner { pointer-events: auto; cursor: grab; }
+.hw-runner.held { cursor: grabbing; }
+.hw-star {
+  position: fixed; z-index: 45; width: 18px; height: 18px; translate: -50% -50%; pointer-events: none;
+  background: radial-gradient(circle, #fff 0 18%, transparent 20%),
+    conic-gradient(from 0deg, transparent 0 40deg, #fff 45deg, transparent 50deg 130deg, #fff 135deg, transparent 140deg 220deg, #fff 225deg, transparent 230deg 310deg, #fff 315deg, transparent 320deg);
+  animation: twinkle 1.6s ease-out forwards;
+}
+@keyframes twinkle { 0% { scale: 0; opacity: 1; } 25% { scale: 1.6; } 100% { scale: 0.6; opacity: 0; rotate: 90deg; } }
+
+/* the hunt's order, scrawled above the footer in blood (scripts/hunt-notes.ts): almost nothing
+   until the pointer's light falls on it */
+.hunt-notes { display: grid; justify-items: center; gap: 10px; padding: 34px 16px 46px; }
+.hunt-note {
+  margin: 0; max-width: 62ch; text-align: center;
+  font: italic 600 clamp(16px, 1.4vw, 19px)/1.35 var(--display); letter-spacing: 0.01em;
+  color: #c3102a;
+  rotate: var(--tilt);
+  opacity: calc(0.035 + var(--heat, 0) * 0.965);
+  text-shadow: 0 0 calc(var(--heat, 0) * 14px) rgb(255 30 50 / 0.6), 0 2px 0 #3a0006;
+  transition: opacity 90ms linear;
+}
+.hunt-note b { font-style: normal; font-weight: 900; margin-right: 0.2em; }
+
+/* ---------- what the season does to the page itself (scripts/dread.ts) ---------- */
+/* fingers over a card's top edge, as if somebody were climbing out from behind it */
+.dr-grip { position: absolute; z-index: 30; width: 84px; height: 40px; pointer-events: none; }
+.dr-grip svg { display: block; width: 84px; height: 40px; overflow: visible; filter: drop-shadow(0 3px 2px rgb(0 0 0 / 0.6)); }
+/* near the pointer they let go and drop back behind the card, and the blood they left stays */
+.dr-grip :is(.hand, .nail, .knuckle, .smear) { transition: translate 300ms cubic-bezier(0.5, 0, 0.9, 0.6), opacity 300ms; }
+.dr-grip.gone :is(.hand, .nail, .knuckle, .smear) { translate: 0 -14px; opacity: 0; transition-duration: 120ms; }
+.dr-grip .hand path { fill: #a99a8c; stroke: #2e211d; stroke-width: 0.9; }
+.dr-grip .nail path { fill: #cfc2b4; stroke: #5d4a40; stroke-width: 0.6; }
+.dr-grip .knuckle path { fill: none; stroke: #6d5a50; stroke-width: 0.9; stroke-linecap: round; }
+.dr-grip .smear path { fill: none; stroke: #8a0614; stroke-width: 2.4; stroke-linecap: round; opacity: 0.9; }
+
+/* screenshots in a frame of dried blood */
+.dr-framed {
+  outline: 2px solid #5c0009; outline-offset: 4px;
+  box-shadow: 0 0 0 9px rgb(40 0 5 / 0.5), 0 0 36px 6px rgb(150 0 14 / 0.35);
+}
+
+/* a word that says something else under the pointer */
+.dr-word { position: relative; text-decoration: underline wavy rgb(195 16 42 / 0.35) 1px; text-underline-offset: 3px; }
+.dr-word::after {
+  content: attr(data-alt); position: absolute; left: 50%; top: 0; translate: -50% 0;
+  white-space: nowrap; color: #ff2a3a; font-style: italic; font-weight: 700;
+  text-shadow: 0 0 8px rgb(255 0 30 / 0.7); opacity: 0; pointer-events: none; transition: opacity 150ms;
+}
+.dr-word:hover { color: transparent; text-decoration-color: transparent; }
+.dr-word:hover::after { opacity: 1; animation: tremble 120ms steps(2) infinite; }
+@keyframes tremble { from { translate: -50% 0; } to { translate: calc(-50% + 1px) -1px; } }
+
+/* eyes in the margins: they follow the pointer, shut when it comes close, whisper when touched */
+.dr-eyes { position: absolute; z-index: 36; display: flex; gap: 10px; padding: 8px; cursor: pointer; opacity: 0.9; transition: opacity 600ms; }
+.dr-eyes.gone { opacity: 0; pointer-events: none; }
+.dr-eyes i {
+  display: grid; place-items: center; width: 18px; height: 9px; border-radius: 50%;
+  background: radial-gradient(#ff2a3a 0 30%, #7a0010 75%);
+  box-shadow: 0 0 10px #ff0020, 0 0 24px rgb(255 0 30 / 0.4);
+  rotate: 12deg; transition: scale 120ms;
+}
+.dr-eyes i + i { rotate: -12deg; }
+.dr-eyes b { width: 4px; height: 7px; border-radius: 50%; background: #000; }
+.dr-eyes:is(.shut, .blink) i { scale: 1 0.08; }
+.dr-whisper {
+  position: absolute; z-index: 35; max-width: 280px; margin: 0; pointer-events: none;
+  font: italic 600 15px/1.4 var(--display); color: #ff3b4e;
+  text-shadow: 0 0 10px rgb(255 0 30 / 0.6), 0 2px 0 #300;
+  animation: hush 6.5s ease forwards;
+}
+@keyframes hush { 0% { opacity: 0; translate: 0 6px; } 10%, 80% { opacity: 1; translate: 0 0; } 100% { opacity: 0; } }
+
+/* the mask that looks in from the side when the pointer has been still too long */
+.dr-peek {
+  position: fixed; left: 0; z-index: 44; width: 120px; height: 98px; padding: 0; border: 0;
+  background: none; cursor: pointer; translate: -100% 0; transition: translate 1.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.dr-peek img { display: block; width: 100%; height: 100%; rotate: 18deg; -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent); mask-image: radial-gradient(closest-side, #000 62%, transparent); }
+.dr-peek.in { translate: -42% 0; }
+.dr-peek.right { left: auto; right: 0; translate: 100% 0; }
+.dr-peek.right img { rotate: -18deg; scale: -1 1; }
+.dr-peek.right.in { translate: 42% 0; }
+.dr-flash { position: fixed; inset: 0; z-index: 100; background: #000 url('/halloween/scream.webp') center / cover no-repeat; pointer-events: none; }
+.dr-ghost { position: fixed; z-index: 50; pointer-events: none; background: url('/halloween/scream.webp') center / cover; mix-blend-mode: hard-light; opacity: 0.8; }
+/* the end of the night on the lost page (scripts/heart.ts): a mask on a thread, and what it hides */
+article.lost { position: relative; }
+.hs-mask {
+  position: absolute; top: 0; right: clamp(8px, 10%, 160px); width: 74px; height: 64px; padding: 0; border: 0;
+  background: none; cursor: pointer; transform-origin: 50% -90px;
+}
+.hs-mask::before { content: ''; position: absolute; left: 50%; bottom: 100%; width: 1px; height: 90px; background: rgb(230 226 240 / 0.4); }
+.hs-mask img {
+  display: block; width: 100%; height: 100%; border-radius: 46% 46% 50% 50%; object-fit: cover;
+  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent); mask-image: radial-gradient(closest-side, #000 70%, transparent);
+  filter: drop-shadow(0 0 10px rgb(255 0 30 / 0.5)); opacity: 0.85; transition: opacity 200ms, scale 200ms;
+}
+.hs-mask:is(:hover, :focus-visible) img { opacity: 1; scale: 1.08; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .hs-mask { animation: hang 4.2s ease-in-out infinite alternate; }
+}
+@keyframes hang { from { rotate: -7deg; } to { rotate: 7deg; } }
+.hs {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px;
+  background: rgb(5 0 1 / 0.86); opacity: 0; transition: opacity 400ms;
+}
+.hs.on { opacity: 1; }
+.hs-card {
+  width: min(560px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 0 0 20px;
+  background: #140306; border: 1px solid #5c0009; border-radius: 16px; color: #f3e9ea;
+  box-shadow: 0 0 60px rgb(150 0 14 / 0.45);
+}
+.hs-pic { display: block; width: 100%; height: auto; aspect-ratio: 1280 / 680; object-fit: cover; border-radius: 15px 15px 0 0; }
+.hs-title { margin: 18px 20px 8px; font-size: clamp(22px, 4vw, 28px); color: #ff3b4e; }
+.hs-text { margin: 0 20px 10px; color: #e6d6d8; line-height: 1.55; }
+.hs-close { margin: 8px 20px 0; }
+.hs { align-content: center; gap: 22px; text-align: center; }
+.hs-phone { font-size: 84px; line-height: 1; color: #c4111f; text-shadow: 0 0 24px rgb(255 0 30 / 0.6); animation: ringing 0.1s linear infinite alternate; }
+.hs-phone.up { animation: none; opacity: 0.3; }
+@keyframes ringing { from { rotate: -9deg; } to { rotate: 9deg; } }
+.hs-said { min-height: 1.4em; margin: 0; max-width: 34ch; font: italic 600 clamp(22px, 3.4vw, 34px)/1.3 var(--display); color: #ff3b4e; text-shadow: 0 0 14px rgb(255 0 30 / 0.5); }
+.hs-card { text-align: start; animation: lunge 420ms cubic-bezier(0.2, 1.4, 0.4, 1); }
+.hs-card.in { animation: lunge 420ms cubic-bezier(0.2, 1.4, 0.4, 1), shake 90ms linear 420ms 5; }
+@keyframes lunge { from { scale: 0.6; opacity: 0; } }
+@keyframes shake { 0% { translate: 5px -3px; } 50% { translate: -6px 4px; } 100% { translate: 0 0; } }
+/* the mask kept in the footer by whoever found it: it shows the mod again */
+.dr-trophy { display: inline-block; width: 34px; height: 28px; margin-left: 8px; padding: 0; border: 0; background: none; vertical-align: middle; cursor: pointer; }
+.dr-trophy img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; filter: drop-shadow(0 0 6px #f00); transition: scale 150ms; }
+.dr-trophy:is(:hover, :focus-visible) img { scale: 1.15; }
 
 @media (prefers-reduced-motion: reduce) {
   .hw-web:is(.tl, .tr, .bl, .br), .hw-garland span, .hw-lantern .pk-face, .hw-blood i, .hw-blood i::after { animation: none; }
