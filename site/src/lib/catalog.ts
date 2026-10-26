@@ -23,9 +23,9 @@ export const GROUPS: Array<[Group, string[]]> = [
   ['heroes', ['heroes', 'hero-items', 'herofx', 'hero-sounds']],
   ['world', ['terrains', 'trees', 'river', 'creeps', 'towers', 'roshan', 'ancient', 'tormentor', 'wards', 'couriers', 'pedestal', 'creep-deny']],
   ['effects', ['shaders', 'ti-bp-effects', 'item-effects', 'ranged-attack', 'high-five']],
-  ['interface', ['backgrounds', 'huds', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'fonts']],
+  ['interface', ['backgrounds', 'huds', 'parts', 'emblems', 'versus-screens', 'item-icons', 'ranks', 'pings', 'cursors', 'fonts']],
   ['sound', ['announcers', 'mega-kill', 'music', 'sounds']],
-  ['other', ['packs', 'optimization', 'other', 'parts']],
+  ['other', ['packs', 'optimization', 'other']],
 ];
 
 export const groupOf = (cat: string): Group => GROUPS.find(([, ids]) => ids.includes(cat))?.[0] ?? 'other';

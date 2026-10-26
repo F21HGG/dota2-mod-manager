@@ -220,16 +220,20 @@
 }
 .tb-search:focus-within {
   border-color: var(--primary);
-  background: color-mix(in srgb, var(--md-primary) 10%, transparent);
+  background: var(--surface);
   width: 300px;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--md-primary) 20%, transparent);
+  /* the field's own ring would sit inside the pill: the pill wears it */
+  box-shadow: var(--focus-ring);
 }
 .tb-search .ms { font-size: 16px; color: var(--text-faint); }
 .tb-search input {
   flex: 1;
-  background: none;
+  background: transparent;
   border: none;
   outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
