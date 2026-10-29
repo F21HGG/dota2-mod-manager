@@ -998,8 +998,16 @@
       "name": "the item table is written into the game with the patch switched off",
       "file": "src/schema-service.ts",
       "anchor": "  function refresh() {",
-      "from": "if (!settings.get('schemaPatch')) return drop();",
-      "to": "if (false) return drop();",
+      "from": "if (!settings.get('schemaPatch') || modsOff()) return drop();",
+      "to": "if (modsOff()) return drop();",
+      "test": "test/schema-service.test.ts"
+    },
+    {
+      "name": "the item table stays in the game with every mod switched off",
+      "file": "src/schema-service.ts",
+      "anchor": "  function refresh() {",
+      "from": "if (!settings.get('schemaPatch') || modsOff()) return drop();",
+      "to": "if (!settings.get('schemaPatch')) return drop();",
       "test": "test/schema-service.test.ts"
     },
     {
@@ -1014,9 +1022,25 @@
       "name": "a game update leaves the built table on the old one",
       "file": "src/schema-service.ts",
       "anchor": "  function heal({ background = false } = {}) {",
-      "from": "if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER)) {",
-      "to": "if (!schema.isDeployed(game, patcher.FOLDER)) {",
+      "from": "if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER) || settings.get('schemaPending')) {",
+      "to": "if (!schema.isDeployed(game, patcher.FOLDER) || settings.get('schemaPending')) {",
       "test": "test/schema-service.test.ts"
+    },
+    {
+      "name": "a build the last run never wrote is not built at the next start",
+      "file": "src/schema-service.ts",
+      "anchor": "  function heal({ background = false } = {}) {",
+      "from": "if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER) || settings.get('schemaPending')) {",
+      "to": "if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER)) {",
+      "test": "test/schema-service.test.ts"
+    },
+    {
+      "name": "a look's switch waits for the whole item table to be written",
+      "file": "src/ipc-library.ts",
+      "anchor": "  ipcMain.handle('mods:setEnabled', async (e, id, enabled) => {",
+      "from": "if (touchesSchema(rec)) void schemaService.refreshInBackground();",
+      "to": "if (touchesSchema(rec)) await schemaService.refreshInBackground();",
+      "test": "test/library-channels.test.ts"
     },
     {
       "name": "two packs carrying the same block are reported as a conflict",

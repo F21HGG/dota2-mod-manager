@@ -31,6 +31,8 @@ export function registerLibraryIpc({
     try {
       const r = installer.setMasterEnabled(!!enabled);
       applyMasterToCursors(!!enabled);
+      // the item table and the cosmetics in it: taken off with the rest, built again when back on
+      void schemaService.refreshInBackground();
       refreshPresence();
       return { ok: true, ...r };
     } catch (err) {
@@ -63,7 +65,9 @@ export function registerLibraryIpc({
         library.setEnabled(id, enabled);
         return others;
       }, installer.log);
-      if (touchesSchema(rec)) await schemaService.refreshInBackground();
+      // not waited for: the switch stood still for the whole build, a 200 MB pak written, and looked
+      // as if the click had not taken. The bar says how far it is, and Play waits for it
+      if (touchesSchema(rec)) void schemaService.refreshInBackground();
       return { ok: true, replaced };
     } catch (err) {
       return { error: errorText(err) };

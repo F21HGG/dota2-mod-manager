@@ -210,9 +210,9 @@ those sources (Source 2 Viewer's export) is the next half and is not here yet.
 ## Presets
 
 A preset is the set of enabled mods, and the looks from the game that were on, kept slot by slot
-(`src/library.ts` picksOn). Applying one switches its mods on and every other mod off, and puts
-each look on in its slot; a slot it does not name keeps what it has, so a courier picked after the
-preset was saved stays on. It travels two ways.
+(`src/library.ts` picksOn). Applying one switches its mods on and every other mod off, and the same
+for the looks: each of its own on in its slot, every other one off, kept in My mods. A preset of 20
+is 20 whatever was on before. It travels two ways.
 
 **As a link.** `src/preset-link.ts` encodes catalog identities, not file names, into
 `d2mm://preset/<code>`, and a look as its slot and item: deflate, base64url, a code short enough for a chat message. Catalog file
@@ -589,6 +589,7 @@ that location is not writable.
 | `src/schema.ts`, `src/schema-kv.ts`, `src/schema-items.ts`, `src/schema-merge.ts` | `items_game.txt`: walking it, reading its items, merging a mod's blocks, building the item pak |
 | `src/schema-service.ts`, `src/schema-cosmetics.ts`, `src/schema-harvest.ts` | The item table as the app keeps it: the build and the repair, the free cosmetics, and a mod's own blocks |
 | `src/schema-build.ts`, `src/build-bar.ts` | Building the table: each item builder pick built once and kept, and a build a step at a time in the background, a newer one stopping an older one before it writes, with the Play button waiting for the last; and the bar at the bottom of the window while it runs |
+| `src/quit-after-build.ts` | Quitting while the item table is written waits for it, up to a limit, so the game is not left a change behind My mods |
 | `src/cosmetic-names.ts` | Official Chinese item names from the installed game's localization tokens; read-only and cached per game build |
 | `src/item-builder.ts`, `src/item-builder-slots.ts`, `src/item-builder-effects.ts` | The item builder: what it offers each hero and slot, the effects, and what a pick writes |
 | `src/item-builder-personas.ts` | Personas: the slot a persona is picked in and one for each of its own, each worn under one of the plain hero's slots over the persona's base, the game's own item where nothing is picked, and the rule that a hero with a persona on wears its items alone |

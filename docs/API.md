@@ -115,6 +115,7 @@ the code, not in this page.
 | [`src/preset-share.ts`](#srcpreset-sharets) | Shareable preset files (.d2mm) — a zip holding preset.json plus the VPK of every mod |
 | [`src/presets-service.ts`](#srcpresets-servicets) | Presets, and the two ways one travels to somebody else. |
 | [`src/pumpkin.ts`](#srcpumpkints) | The pumpkin's side of the key (renderer/ui/pumpkin.ts asks, tools/pumpkin-worker answers). |
+| [`src/quit-after-build.ts`](#srcquit-after-buildts) | Quitting waits for the item table being written. |
 | [`src/recolor.ts`](#srcrecolorts) | An item's effects in a colour of the user's choosing, built from the game's own files. |
 | [`src/release-notes.ts`](#srcrelease-notests) | The changelog section for one version, for the "What's new" window. |
 | [`src/remote-config-format.ts`](#srcremote-config-formatts) | The remote config's format (src/remote-config.ts fetches it and answers from it): what the |
@@ -2840,6 +2841,16 @@ Master "mods off" switch: every active mod pak is renamed <file>.moff so the gam
 ignores it (it only mounts pakNN_dir.vpk). Distinct from the per-mod ".off" state so
 the two never clobber each other. Official localization (pak01_*) / gameinfo.gi are
 never touched — turning mods off must not strip the game's own language files.
+
+### `MASTER_MARK`
+
+```ts
+export const MASTER_MARK = `dota2modmanager${MASTER_OFF}`
+```
+
+The master switch off, said on its own. A folder with nothing to rename (every mod already
+switched off one by one, the looks all in the item table) said "on" whatever was pressed: the
+switch flipped back at the next start and the table, which follows it, stayed in the game.
 
 ### `OWNERSHIP_FILE`
 
@@ -6279,8 +6290,8 @@ Parse and validate a .d2mm.
 
 Presets, and the two ways one travels to somebody else.
 
-A preset is a named set of "these mods on, everything else off", and the looks that go on in
-the slots it names (Library.picksOn). Sharing is what makes this
+A preset is a named set of "these mods on, everything else off", and the same for the looks
+(Library.picksOn). Sharing is what makes this
 more than a list: a preset that only names catalog mods is a few hundred bytes and installs
 from the catalog on the other end, while one that has to carry a mod's own bytes can run to
 hundreds of megabytes. Which of the two a given preset is depends on where its mods came
@@ -6320,10 +6331,21 @@ export function touchesSchema(rec: LibRecord): boolean
 
 Does changing this record mean the item table has to be rebuilt?
 
+### `presetIsOn`
+
+```ts
+export function presetIsOn(library: Library, preset: Preset): boolean
+```
+
+Whether what is on is exactly this preset, so the Presets screen can say which one you are in:
+its installed mods and no other, and for a preset that kept its looks, those and no other. A
+member not installed cannot be on, and is not asked about; a preset saved before it kept looks
+says nothing about them, and they are not asked about either.
+
 ### `presetsService`
 
 ```ts
-export function presetsService({ catalog, installer, library, schemaService, deployAndApply }: { catalog: Pick<Catalog, 'load'>; installer: PresetInstaller; library: Library; schemaService: { refreshInBackground(): Promise<unknown>; pickCosmetic(slot: string, itemId: string, name: string, effectId: string, opts: { write: boolean }): unknown; }; deployAndApply: (pack: LibRecord) => unknown; })
+export function presetsService({ catalog, installer, library, schemaService, deployAndApply, settings }: { catalog: Pick<Catalog, 'load'>; installer: PresetInstaller; library: Library; settings?: Pick<Settings, 'get' | 'set'>; schemaService: { refreshInBackground(): Promise<unknown>; pickCosmetic(slot: string, itemId: string, name: string, effectId: string, opts: { write: boolean }): unknown; }; deployAndApply: (pack: LibRecord) => unknown
 ```
 
 Everything about presets that needs the running app's services.
@@ -6334,6 +6356,7 @@ Everything about presets that needs the running app's services.
 @param deps.library        the manifest of installed mods and saved presets
 @param deps.schemaService  puts a preset's looks on, and rebuilds the item table when a preset changes it
 @param deps.deployAndApply  rebuilds one pack's VPK
+@param deps.settings       where the preset applied last is kept (presetState)
 ```
 
 ## src/pumpkin.ts
@@ -6412,6 +6435,38 @@ export function createPumpkin({ settings, importVpkPaths, library, fetch: get = 
 ```
 
 The pumpkin's side in the main process: spend a key, fetch the prize again, say whether it is here.
+
+## src/quit-after-build.ts
+
+Quitting waits for the item table being written.
+
+A look switched on or off is written into the game by a build in the background, a few seconds
+for a library of several hundred picks. The window closed in those seconds took the build with
+it: the game kept the table from before, so a look off on screen was on in the game, and twice
+in a row the app was closed within seconds of a change (J0nathan550, 2026-10-29). The next start
+builds it again (schemaPending), but only if it stays open long enough. So the app stays, without
+its window, until the build has written, and no longer than LIMIT_MS for one that hangs. When no
+build is running nothing is held: the updater's quit-and-install goes through as it always did.
+
+### `LIMIT_MS`
+
+```ts
+export const LIMIT_MS = 30_000
+```
+
+The longest a quit waits for a build: a whole library is about three seconds of work.
+
+### `quitAfterBuild`
+
+```ts
+export function quitAfterBuild(app: { on(event: 'before-quit', fn: (e: QuitEvent) => void): unknown; quit(): void }, { busy, settled, log = () => {}, limitMs = LIMIT_MS }: { busy: () => boolean; settled: () => Promise<void>; log?: (msg: string) => void; limitMs?: number; }): void
+```
+
+```
+@param app      what of Electron's app this needs
+@param busy     whether a build is running or asked for (schemaService.busy)
+@param settled  resolves once none is (schemaService.settled)
+```
 
 ## src/recolor.ts
 
@@ -7561,7 +7616,7 @@ The patch and the built table as Settings shows them; the patcher's own state is
 ### `createSchemaService`
 
 ```ts
-export function createSchemaService({ settings, library, installer, userDataDir, log = () => {}, bases, onBuild = () => {}, onDeployed = () => {} }: { settings: Pick<Settings, 'get' | 'set'>; library: Library; installer: SchemaInstaller; userDataDir: string; log?: (msg: string) => void; bases?: Pick<BaseStore, 'entries' | 'want'>; onBuild?: (step: BuildStep | null) => void; onDeployed?: (filled: Set<string>) => void; })
+export function createSchemaService({ settings, library, installer, userDataDir, log = () => {}, bases, onBuild = () => {}, onDeployed = () => {}, modsOff = () => false }: { settings: Pick<Settings, 'get' | 'set'>; library: Library; installer: SchemaInstaller; userDataDir: string; log?: (msg: string) => void; bases?: Pick<BaseStore, 'entries' | 'want'>; onBuild?: (step: BuildStep | null) => void; onDeployed?: (filled: Set<string>) => void; modsOff?: () => boolean; })
 ```
 
 The item table and the search-path patch, kept in step with the library and the installed game.
@@ -7671,6 +7726,16 @@ export function undeploy({ gamePath, folder }: { gamePath: string; folder: strin
 ```
 
 Drop the built schema, and the folder with it once nothing of ours is left there.
+
+### `sweepUnfinished`
+
+```ts
+export function sweepUnfinished(gamePath: string, folder: string, pid = process.pid): number
+```
+
+Take away the writes of the pak another run left half done: an app closed while a build wrote
+left 190 MB beside the pak, and nothing ever took it away. This run's own are its builds' to
+finish, so only another process's go. Answers how many went.
 
 ### `isDeployed`
 

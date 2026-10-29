@@ -64,13 +64,15 @@ export interface SchemaState extends Partial<patcher.PatchState> {
  * @param deps.onBuild how far a build in the background is (refreshInBackground), null when it ended
  * @param deps.onDeployed the paths, lowercased, the written table's picks fill (none once it is
  *   taken off): the arcana window's Terrorblade gives them up (src/arcana-service.ts giveWay)
+ * @param deps.modsOff whether the master switch has every mod off (installer.masterIsOff)
  */
 /** The item table and the search-path patch, kept in step with the library and the installed game. */
-export function createSchemaService({ settings, library, installer, userDataDir, log = () => {}, bases, onBuild = () => {}, onDeployed = () => {} }: {
+export function createSchemaService({ settings, library, installer, userDataDir, log = () => {}, bases, onBuild = () => {}, onDeployed = () => {}, modsOff = () => false }: {
   settings: Pick<Settings, 'get' | 'set'>; library: Library; installer: SchemaInstaller; userDataDir: string; log?: (msg: string) => void;
   bases?: Pick<BaseStore, 'entries' | 'want'>;
   onBuild?: (step: BuildStep | null) => void;
   onDeployed?: (filled: Set<string>) => void;
+  modsOff?: () => boolean;
 }) {
   const backupDir = path.join(userDataDir, 'backups', 'patch');
   const gamePath = () => settings.get('dotaGamePath');
@@ -111,14 +113,22 @@ export function createSchemaService({ settings, library, installer, userDataDir,
   function* refreshSteps(): Generator<BuildYield, Refreshed, boolean | undefined> {
     const game = gamePath();
     if (!game) return { ok: false, reason: 'no-game-path' };
+    // said before the build and unsaid when one writes: the app closed in between (a switch
+    // pressed, the window shut while the table was written) left the game a change behind the
+    // library, the look off on screen and on in the game, and the next start did not notice
+    settings.set('schemaPending', true);
     try {
       const drop = () => {
         schema.undeploy({ gamePath: game, folder: patcher.FOLDER });
         settings.set('schemaStamp', null);
+        settings.set('schemaPending', false);
         onDeployed(new Set());
         return { ok: true, deployed: false, patches: 0 };
       };
-      if (!settings.get('schemaPatch')) return drop();
+      // the master switch renames the paks in the language folder; the table is in a folder of
+      // its own, so it stayed and the picked cosmetics with it while "mods off" said vanilla. It
+      // goes, and the switch turned on builds it again (src/ipc-library.ts mods:setMaster)
+      if (!settings.get('schemaPatch') || modsOff()) return drop();
       // through the cache, not around it: this runs on every mod removed, enabled or
       // switched off, and re-extracting 50 MB from the game's pak each time was the wait
       const base = vanillaBase();
@@ -126,6 +136,7 @@ export function createSchemaService({ settings, library, installer, userDataDir,
       if (!list.length) return drop();
       const res = yield* schema.deploySteps({ gamePath: game, folder: patcher.FOLDER, patches: list, base, beneath });
       settings.set('schemaStamp', stampOf(res.stamp));
+      settings.set('schemaPending', false);
       onDeployed(new Set(list.flatMap((p) => (p.assets || []).map((e) => entryPath(e).toLowerCase()))));
       return { ok: true, deployed: true, patches: res.applied.length, missing: res.missing, conflicts: res.conflicts, bytes: res.bytes };
     } catch (err) {
@@ -137,6 +148,7 @@ export function createSchemaService({ settings, library, installer, userDataDir,
    *  switches or takes off an item, and what a downloaded arcana base asks for. */
   const refreshInBackground = () => builds.inBackground();
   const settled = () => builds.settled();
+  const busy = () => builds.busy();
 
   // A Dota update overwrites the patched gameinfo and moves the item table underneath our
   // build. Runs on startup and before launching the game.
@@ -166,9 +178,11 @@ export function createSchemaService({ settings, library, installer, userDataDir,
         patcher.apply({ gamePath: game, folder: patcher.FOLDER, backupDir });
         healed.push('patch');
       }
-      // a new build of the game or of the app: either can change what a pick builds into
+      if (schema.sweepUnfinished(game, patcher.FOLDER)) log('schema: a write another run left unfinished was taken away');
+      // a new build of the game or of the app: either can change what a pick builds into; or a
+      // build the last run was asked for and never wrote
       const stamp = stampOf(schema.readGameSchema(game).stamp);
-      if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER)) {
+      if (stamp !== settings.get('schemaStamp') || !schema.isDeployed(game, patcher.FOLDER) || settings.get('schemaPending')) {
         // at start and after a patch the window is open, or about to be: the table builds behind
         // it, not in the way of its first frame (issue #286), and Play waits for it (settled)
         if (background) void refreshInBackground().then((r) => { if (r.error) log(`schema: the build after the repair failed: ${r.error}`); });
@@ -255,7 +269,7 @@ export function createSchemaService({ settings, library, installer, userDataDir,
   const askForBases = () => { if (bases && settings.get('schemaPatch')) for (const b of chooseBases(table.picks())) void bases.want(b.id); };
 
   return {
-    backupDir, patches, refresh, refreshInBackground, settled, heal, setEnabled, harvest, split, migrate, state,
+    backupDir, patches, refresh, refreshInBackground, settled, busy, heal, setEnabled, harvest, split, migrate, state,
     cosmeticSlots, cosmeticSlotsSteps, pickCosmetic, pickSet, migrateCosmeticSettings, askForBases,
   };
 }

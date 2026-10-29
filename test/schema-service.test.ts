@@ -92,16 +92,16 @@ const NO_INSTALLER: SchemaInstaller = {
   installedSize: () => { throw new Error('the installer was not meant to be asked'); },
 };
 
-function service(t: TestContext, { values = {}, installer = NO_INSTALLER, text = GAME_TABLE, bases, onBuild } = {} as {
+function service(t: TestContext, { values = {}, installer = NO_INSTALLER, text = GAME_TABLE, bases, onBuild, modsOff } = {} as {
   values?: Record<string, unknown>; installer?: SchemaInstaller; text?: string; bases?: Parameters<typeof createSchemaService>[0]['bases'];
-  onBuild?: Parameters<typeof createSchemaService>[0]['onBuild'];
+  onBuild?: Parameters<typeof createSchemaService>[0]['onBuild']; modsOff?: () => boolean;
 }) {
   const g = game(t, text);
   fs.mkdirSync(g.userData, { recursive: true });
   const library = new Library(g.userData);
   const settings = settingsIn({ dotaGamePath: g.game, schemaPatch: false, ...values });
   const said: string[] = [];
-  const svc = createSchemaService({ settings, library, installer, userDataDir: g.userData, log: (m) => said.push(m), bases, onBuild });
+  const svc = createSchemaService({ settings, library, installer, userDataDir: g.userData, log: (m) => said.push(m), bases, onBuild, modsOff });
   return { ...g, library, settings, svc, said };
 }
 
@@ -171,6 +171,23 @@ test('a mod switched off leaves the table, and with nothing left the table goes'
   assert.equal(s.svc.state().mods, 0);
 });
 
+test('with every mod off the table goes, cosmetics and all, and comes back when they are on', (t) => {
+  let off = false;
+  const s = service(t, { values: { schemaPatch: true }, modsOff: () => off });
+  modWith(s.library, 'Rifle mod', [riflePatch('models/mod/rifle.vmdl')]);
+  s.svc.setEnabled(true);
+  assert.equal(schema.isDeployed(s.game, patcher.FOLDER), true);
+
+  off = true;
+  assert.deepEqual(s.svc.refresh(), { ok: true, deployed: false, patches: 0 });
+  assert.equal(schema.isDeployed(s.game, patcher.FOLDER), false, '"mods off" said vanilla, and the picked items stayed on');
+  assert.equal(s.settings.get('schemaPatch'), true, 'the patch itself stays on: safe mode is a switch of its own');
+
+  off = false;
+  assert.equal((s.svc.refresh() as { deployed?: boolean }).deployed, true);
+  assert.match(deployedTable(s.game) as string, /models\/mod\/rifle\.vmdl/);
+});
+
 // ---------- a Dota update ----------
 
 test('a game update is noticed, and repaired: the patch put back and the table rebuilt on the new one', (t) => {
@@ -210,6 +227,23 @@ test('a table built by older code is rebuilt at the next start or launch, the ga
   assert.equal(s.svc.state().stale, true);
   assert.deepEqual(s.svc.heal(), { ok: true, healed: ['schema'] });
   assert.equal(s.settings.get('schemaStamp'), built);
+});
+
+test('a build the last run never wrote is built at the next start, and a write it left half done is taken away', (t) => {
+  const s = service(t);
+  const rifle = modWith(s.library, 'Rifle mod', [riflePatch('models/mod/rifle.vmdl')]);
+  s.svc.setEnabled(true);
+  assert.equal(s.settings.get('schemaPending'), false, 'a build that wrote says so');
+  // the app closed while the table was written: the library moved on, the game did not
+  s.library.setEnabled(rifle.id, false);
+  s.settings.set('schemaPending', true);
+  const dir = path.join(s.game, patcher.FOLDER);
+  fs.writeFileSync(path.join(dir, `${schema.SCHEMA_VPK}.999999-1.mmtmp`), 'half a pak');
+  fs.writeFileSync(path.join(dir, `${schema.SCHEMA_VPK}.${process.pid}-7.mmtmp`), 'a write of this run, still going');
+  assert.deepEqual(s.svc.heal(), { ok: true, healed: ['schema'] }, 'the stamp still matched, and the start did not notice');
+  assert.equal(schema.isDeployed(s.game, patcher.FOLDER), false, 'the game caught up: its only mod is off, so the table went');
+  assert.equal(s.settings.get('schemaPending'), false);
+  assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.mmtmp')), [`${schema.SCHEMA_VPK}.${process.pid}-7.mmtmp`]);
 });
 
 test("the code's fingerprint follows its files", (t) => {
